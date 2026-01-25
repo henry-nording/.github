@@ -1,0 +1,166 @@
+<div align="center">
+
+# 🧬 Nording Lab
+### Vascular Biology ∩ Data Science
+
+**Computational Vascular Immunology**  
+*Kiel University | University Hospital Schleswig-Holstein (UKSH)*
+
+[![Email](https://img.shields.io/badge/Email-henry.nording%40uksh.de-D14836?style=for-the-badge&logo=gmail&logoColor=white)](mailto:henry.nording@uksh.de)
+[![Google Scholar](https://img.shields.io/badge/Google%20Scholar-4285F4?style=for-the-badge&logo=google-scholar&logoColor=white)](https://scholar.google.com/citations?user=YOUR_ID)
+[![ORCID](https://img.shields.io/badge/ORCID-A6CE39?style=for-the-badge&logo=orcid&logoColor=white)](https://orcid.org/YOUR-ORCID)
+
+---
+
+</div>
+
+## 🔬 What We Do
+
+We study how **immune cells shape vascular adaptation** in ischemic disease—and build **AI-powered tools** to decode that complexity.
+
+### Our Research Focus
+
+🩸 **Platelet Immunology**  
+Platelets aren't just clotting cells—they're immune regulators. We discovered that platelet C5aR1 controls tissue revascularization via CXCL4 chemokine signaling (*Nature Communications*, 2021).
+
+🤖 **Computational Immunophenotyping**  
+We develop ML-based pipelines to analyze 43-color spectral flow cytometry data, profiling 180+ immune subsets in patient blood.
+
+💻 **Open Science Infrastructure**  
+All our analysis code is open-source. We believe reproducible science requires reproducible code.
+
+---
+
+## 🧪 Our Approach
+
+| **Wet Lab** | **Dry Lab** |
+|-------------|-------------|
+| 43-color spectral flow cytometry | Custom R analysis pipelines |
+| Single-cell immunophenotyping | Machine learning for cell classification |
+| Mouse models of ischemia | Deep learning on coronary angiograms |
+| AAV-based gene therapies | Automated quality control & batch correction |
+
+**Translation:** Clinical cohorts (peripheral artery disease, coronary artery disease, aortic stenosis) → Mechanistic insights → Therapeutic targets
+
+---
+
+## 💻 Tech Stack
+
+### Core Languages & Frameworks
+![R](https://img.shields.io/badge/R-276DC3?style=for-the-badge&logo=r&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Bash](https://img.shields.io/badge/Bash-4EAA25?style=for-the-badge&logo=gnubash&logoColor=white)
+
+### Bioconductor Ecosystem
+![Bioconductor](https://img.shields.io/badge/Bioconductor-1A5490?style=for-the-badge&logo=r&logoColor=white)
+![flowCore](https://img.shields.io/badge/flowCore-276DC3?style=for-the-badge)
+![FlowSOM](https://img.shields.io/badge/FlowSOM-87CEEB?style=for-the-badge)
+![tidyFlowCore](https://img.shields.io/badge/tidyFlowCore-20B2AA?style=for-the-badge)
+
+### Data Science & ML
+![tidyverse](https://img.shields.io/badge/tidyverse-1A162D?style=for-the-badge&logo=tidyverse&logoColor=white)
+![ggplot2](https://img.shields.io/badge/ggplot2-E34F26?style=for-the-badge)
+![TensorFlow](https://img.shields.io/badge/TensorFlow-FF6F00?style=for-the-badge&logo=tensorflow&logoColor=white)
+![scikit--learn](https://img.shields.io/badge/scikit--learn-F7931E?style=for-the-badge&logo=scikitlearn&logoColor=white)
+
+### Workflow & Reproducibility
+![Git](https://img.shields.io/badge/Git-F05032?style=for-the-badge&logo=git&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+![RMarkdown](https://img.shields.io/badge/RMarkdown-75AADB?style=for-the-badge&logo=rmarkdown&logoColor=white)
+
+---
+
+## 📦 Code & Data Repositories
+
+**Coming soon!**
+
+We're currently migrating analysis pipelines, protocols, and datasets to GitHub. Expected release: Q1 2026.
+
+Planned repositories:
+- 🔥 **Flagship tools:** R packages for spectral flow cytometry analysis
+- 🧬 **Protocols:** Standard operating procedures for 43-color spectral cytometry
+- 📊 **Data:** Clinical cohort datasets (peripheral artery disease, aortic stenosis)
+
+Watch this space or [email us](mailto:henry.nording@uksh.de) to be notified when code is released.
+
+---
+
+## 👥 We're Hiring!
+
+### Open Positions
+
+We're looking for:
+
+- **PhD Students** in Computational Immunology (fully funded, 3–4 years)
+- **Postdoctoral Researchers** in Bioinformatics/Biostatistics
+- **Research Software Engineers** (R package development)
+
+**What we value:**
+- Strong programming skills (R or Python; we can teach biology)
+- Passion for reproducible research (version control, documentation)
+- Curiosity about translational science (mechanism → medicine)
+
+**What we offer:**
+- Mentorship focused on your career goals (academic or industry)
+- Access to clinical cohorts, high-end cytometry, and compute infrastructure
+- Collaborative environment (DZHK network, Precision Medicine Cluster of Excellence)
+- Work-life balance (no "publish or perish" culture)
+
+📧 **Interested?** Email [henry.nording@uksh.de](mailto:henry.nording@uksh.de) with:
+- CV
+- Brief statement: What computational problem in immunology excites you?
+- GitHub profile or code sample (if available)
+
+---
+
+## 📚 Selected Publications
+
+1. **Nording H**, Baron L, Haberthür D, et al. (2021). *The C5a/C5a receptor 1 axis controls tissue neovascularization through CXCL4 release from platelets.* **Nature Communications** 12:3352. [DOI](https://doi.org/10.1038/s41467-021-23499-w)
+
+2. **Nording H**, Baron L, Sauter M, et al. (2023). *Platelets regulate ischemia-induced revascularization and angiogenesis by secretion of growth factor-modulating factors.* **Blood Advances** 7(21):6411-6427. [DOI](https://doi.org/10.1182/bloodadvances.2021006891)
+
+3. **Nording H**, Sauter M, Lin C, et al. (2022). *Activated Platelets Upregulate β2 Integrin Mac-1 on Dendritic Cells.* **Journal of Immunology** 208(7):1729-1741. [DOI](https://doi.org/10.4049/jimmunol.2100557)
+
+4. Hatfaludi CA, Bunescu D, Ciudel CF, et al. (2023). *Deep Learning Based Detection of Collateral Circulation in Coronary Angiographies.* **IEEE CBMS** 2023:886-891. [DOI](https://doi.org/10.1109/CBMS58004.2023.00337)
+
+📄 **Full publication list:** [Google Scholar](https://scholar.google.com/citations?user=YOUR_ID) | [ORCID](https://orcid.org/YOUR-ORCID)
+
+---
+
+## 🤝 Collaborations & Funding
+
+### Active Grants
+
+- **DZHK Start-Up Grant** — Novel T cell subtypes in vascular occlusion
+- **ERA-PerMed PROGRESS** — AI for coronary collateral assessment
+- **Precision Medicine Cluster of Excellence** — Full membership
+
+### Collaborators
+
+We work with groups at:
+- **Technical University Munich** (Systems Immunology)
+- **University of Heidelberg** (Complement Biology)
+- **Max Delbrück Center Berlin** (Bioinformatics)
+- **European Molecular Biology Laboratory (EMBL)** (Machine Learning)
+
+Interested in collaboration? Let's talk: [henry.nording@uksh.de](mailto:henry.nording@uksh.de)
+
+---
+
+## 📬 Contact & Links
+
+**Lab Website:** *(coming soon)*  
+**Location:** Kiel University, UKSH Campus Kiel, Germany 🇩🇪  
+**PI:** Prof. Dr. Henry Nording  
+**Email:** henry.nording@uksh.de  
+**Instagram:** [@henrynording](https://instagram.com/henrynording)
+
+---
+
+<div align="center">
+
+### 🌟 Star our repos when they launch! 🌟
+
+*Last updated: January 2026*
+
+</div>
