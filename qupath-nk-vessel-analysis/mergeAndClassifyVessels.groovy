@@ -9,10 +9,11 @@
  *  2. Annotationen, die sehr nah beieinander liegen (Abstand <= mergeDistance) oder
  *     sich berühren/überlappen, werden zu einer Annotation zusammengeführt.
  *     -> behebt die Fragmentierung, die der Pixel-Classifier erzeugt hat.
- *  3. Jede resultierende (verschmolzene) Annotation wird anhand ihrer Fläche in
- *     "Small vessel" bzw. "Large vessel" eingeteilt.
+ *  3. Jede resultierende (verschmolzene) Annotation wird in "small vessel" bzw.
+ *     "large vessel" eingeteilt – anhand von Fläche UND max. Durchmesser:
+ *     "large", sobald die Fläche ODER der max. Durchmesser über der Schwelle liegt.
  *
- * Beide Schwellen (Abstand & Fläche) sind im CONFIG-Block unten frei einstellbar.
+ * Alle Schwellen (Abstand, Fläche, Durchmesser) sind im CONFIG-Block frei einstellbar.
  *
  * Bedienung:
  *  - Im Viewer die zu bearbeitenden Annotationen markieren
@@ -23,15 +24,23 @@
 import qupath.lib.objects.PathObjects
 import qupath.lib.roi.GeometryTools
 import org.locationtech.jts.operation.union.UnaryUnionOp
+import org.locationtech.jts.algorithm.MinimumBoundingCircle
 
 // ============================ CONFIG (anpassen) ============================
 // Maximaler Abstand, bis zu dem benachbarte Annotationen verschmolzen werden.
 // 0 = nur sich berührende/überlappende Annotationen werden vereinigt.
 double  mergeDistance        = 5.0       // Einheit: µm   (bzw. px, falls useMicrons=false)
 
-// Flächen-Schwelle: Fläche <  Schwelle  -> "Small vessel"
-//                   Fläche >= Schwelle  -> "Large vessel"
-double  vesselAreaThreshold  = 1000.0    // Einheit: µm²  (bzw. px², falls useMicrons=false)
+// Klassifizierung über ZWEI Kriterien, die mit ODER verknüpft sind:
+// Eine Annotation wird "large vessel", sobald sie die Flächen- ODER die
+// Durchmesser-Schwelle erreicht/überschreitet – sonst "small vessel".
+
+// (a) Flächen-Schwelle
+double  vesselAreaThreshold      = 1000.0  // Einheit: µm²  (bzw. px², falls useMicrons=false)
+
+// (b) Größen-Schwelle = max. Durchmesser (längste Ausdehnung / Feret-Max,
+//     aus dem kleinsten umschließenden Kreis).
+double  vesselDiameterThreshold  = 50.0    // Einheit: µm   (bzw. px, falls useMicrons=false)
 
 // true  = Schwellen in µm / µm² (nutzt die Pixelkalibrierung des Bildes)
 // false = Schwellen direkt in Pixel / Pixel²
@@ -72,6 +81,7 @@ if (useMicrons && !hasCal)
 // Schwellen in Pixel-Einheiten umrechnen (Geometrien liegen in Pixelkoordinaten vor)
 double distPixels         = toMicrons ? (mergeDistance / avgPx)        : mergeDistance
 double areaPixelThreshold = toMicrons ? (vesselAreaThreshold / (pxW * pxH)) : vesselAreaThreshold
+double diamPixelThreshold = toMicrons ? (vesselDiameterThreshold / avgPx)   : vesselDiameterThreshold
 double bufferAmt          = distPixels / 2.0
 
 // --- 3) Geometrien verschmelzen ---
@@ -113,11 +123,13 @@ def newAnnotations = []
 int nSmall = 0, nLarge = 0
 for (def g : mergedGeoms) {
     def roi   = GeometryTools.geometryToROI(g, plane)
-    double areaPx = g.getArea()                       // in Pixel²
-    boolean isSmall = areaPx < areaPixelThreshold
-    def ann = PathObjects.createAnnotationObject(roi, isSmall ? smallClass : largeClass)
+    double areaPx    = g.getArea()                                // Fläche in Pixel²
+    double maxDiamPx = 2.0 * new MinimumBoundingCircle(g).getRadius()  // max. Durchmesser in Pixel
+    // ODER-Verknüpfung: large, wenn Fläche ODER Durchmesser über der Schwelle liegt
+    boolean isLarge = (areaPx >= areaPixelThreshold) || (maxDiamPx >= diamPixelThreshold)
+    def ann = PathObjects.createAnnotationObject(roi, isLarge ? largeClass : smallClass)
     newAnnotations << ann
-    if (isSmall) nSmall++ else nLarge++
+    if (isLarge) nLarge++ else nSmall++
 }
 
 // --- 5) Hierarchie aktualisieren ---
@@ -130,7 +142,9 @@ fireHierarchyUpdate()
 println "----------------------------------------------------"
 println "Ausgewählte Annotationen:   ${selected.size()}"
 println "Merge-Distanz:              ${mergeDistance} ${toMicrons ? 'µm' : 'px'}  (= ${(distPixels as double).round(2)} px)"
-println "Flächen-Schwelle:           ${vesselAreaThreshold} ${toMicrons ? 'µm²' : 'px²'}"
+println "Klassifizierung:            large, wenn Fläche ODER max. Durchmesser >= Schwelle"
+println "  Flächen-Schwelle:         ${vesselAreaThreshold} ${toMicrons ? 'µm²' : 'px²'}"
+println "  Durchmesser-Schwelle:     ${vesselDiameterThreshold} ${toMicrons ? 'µm' : 'px'}"
 println "Resultierende Annotationen: ${newAnnotations.size()}"
 println "  -> ${smallClassName}: ${nSmall}"
 println "  -> ${largeClassName}: ${nLarge}"
