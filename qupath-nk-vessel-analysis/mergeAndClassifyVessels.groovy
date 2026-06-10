@@ -1,5 +1,5 @@
 /**
- * QuPath – Ausgewählte Annotationen verschmelzen & Gefäße nach Fläche klassifizieren
+ * QuPath – Ausgewählte Annotationen verschmelzen & Gefäße klassifizieren
  * --------------------------------------------------------------------------------
  * Projekt: NK-Zell- / Gefäß-Distanzanalyse (IB4 vs. Synaptophysin), Maus-Muskelschnitte
  *
@@ -13,48 +13,27 @@
  *     "large vessel" eingeteilt – anhand von Fläche UND max. Durchmesser:
  *     "large", sobald die Fläche ODER der max. Durchmesser über der Schwelle liegt.
  *
- * Alle Schwellen (Abstand, Fläche, Durchmesser) sind im CONFIG-Block frei einstellbar.
+ * Die Messparameter werden beim Start in einem DIALOGFENSTER abgefragt.
  *
  * Bedienung:
  *  - Im Viewer die zu bearbeitenden Annotationen markieren
  *    (z. B. per Strg/Cmd-Klick mehrere, oder Objektliste -> mehrere selektieren).
- *  - Skript ausführen (Run). Originale werden ersetzt (siehe removeOriginals).
+ *  - Skript ausführen (Run) -> Parameter im Fenster eingeben -> OK.
  */
 
 import qupath.lib.objects.PathObjects
 import qupath.lib.roi.GeometryTools
+import qupath.lib.plugins.parameters.ParameterList
+import qupath.lib.gui.dialogs.Dialogs
 import org.locationtech.jts.operation.union.UnaryUnionOp
 import org.locationtech.jts.algorithm.MinimumBoundingCircle
 
-// ============================ CONFIG (anpassen) ============================
-// Maximaler Abstand, bis zu dem benachbarte Annotationen verschmolzen werden.
-// 0 = nur sich berührende/überlappende Annotationen werden vereinigt.
-double  mergeDistance        = 5.0       // Einheit: µm   (bzw. px, falls useMicrons=false)
-
-// Klassifizierung über ZWEI Kriterien, die mit ODER verknüpft sind:
-// Eine Annotation wird "large vessel", sobald sie die Flächen- ODER die
-// Durchmesser-Schwelle erreicht/überschreitet – sonst "small vessel".
-
-// (a) Flächen-Schwelle
-double  vesselAreaThreshold      = 1000.0  // Einheit: µm²  (bzw. px², falls useMicrons=false)
-
-// (b) Größen-Schwelle = max. Durchmesser (längste Ausdehnung / Feret-Max,
-//     aus dem kleinsten umschließenden Kreis).
-double  vesselDiameterThreshold  = 50.0    // Einheit: µm   (bzw. px, falls useMicrons=false)
-
-// true  = Schwellen in µm / µm² (nutzt die Pixelkalibrierung des Bildes)
-// false = Schwellen direkt in Pixel / Pixel²
-boolean useMicrons           = true
-
-// Klassennamen für die Einteilung – müssen den im Projekt vorhandenen Klassen
-// entsprechen (Groß-/Kleinschreibung egal, wird vorhandenen Klassen zugeordnet).
-String  smallClassName       = "small vessel"
-String  largeClassName       = "large vessel"
-
-// Ursprünglich ausgewählte Annotationen nach dem Merge löschen?
-// false = Originale bleiben zusätzlich erhalten (zum Vergleichen/Prüfen).
-boolean removeOriginals      = true
-// ==========================================================================
+// ====================== feste Einstellungen (selten zu ändern) ======================
+// Klassennamen – müssen den im Projekt vorhandenen Klassen entsprechen
+// (Groß-/Kleinschreibung egal, wird vorhandenen Klassen zugeordnet).
+String  smallClassName = "small vessel"
+String  largeClassName = "large vessel"
+// ====================================================================================
 
 
 // --- 1) Auswahl einsammeln (nur flächige Annotationen) ---
@@ -62,11 +41,34 @@ def selected = getSelectedObjects().findAll {
     it.isAnnotation() && it.getROI() != null && it.getROI().isArea()
 }
 if (selected.isEmpty()) {
-    println "Keine flächigen Annotationen ausgewählt. Bitte im Viewer Annotationen markieren und erneut ausführen."
+    Dialogs.showWarningNotification("Keine Auswahl",
+        "Keine flächigen Annotationen ausgewählt. Bitte im Viewer markieren und erneut ausführen.")
     return
 }
 
-// --- 2) Pixelkalibrierung / Einheiten ---
+// --- 2) Messparameter per Dialogfenster abfragen ---
+def params = new ParameterList()
+    .addDoubleParameter("mergeDistance", "Merge-Distanz", 5.0, "µm",
+        "Maximaler Abstand, bis zu dem benachbarte Annotationen verschmolzen werden (0 = nur berührende/überlappende).")
+    .addDoubleParameter("areaThreshold", "Flächen-Schwelle", 1000.0, "µm²",
+        "Annotationen mit dieser Fläche oder größer gelten als 'large vessel'.")
+    .addDoubleParameter("diameterThreshold", "Durchmesser-Schwelle (max.)", 50.0, "µm",
+        "Annotationen mit diesem max. Durchmesser oder größer gelten als 'large vessel'.")
+    .addBooleanParameter("useMicrons", "Schwellen in µm / µm² (sonst in Pixel)", true,
+        "Nutzt die Pixelkalibrierung des Bildes. Ohne Kalibrierung wird automatisch in Pixel gerechnet.")
+    .addBooleanParameter("removeOriginals", "Originale nach Merge löschen", true,
+        "Wenn deaktiviert, bleiben die ursprünglich ausgewählten Annotationen zusätzlich erhalten.")
+
+if (!Dialogs.showParameterDialog("Gefäße verschmelzen & klassifizieren", params))
+    return   // Abbrechen gedrückt
+
+double  mergeDistance           = params.getDoubleParameterValue("mergeDistance")
+double  vesselAreaThreshold     = params.getDoubleParameterValue("areaThreshold")
+double  vesselDiameterThreshold = params.getDoubleParameterValue("diameterThreshold")
+boolean useMicrons              = params.getBooleanParameterValue("useMicrons")
+boolean removeOriginals         = params.getBooleanParameterValue("removeOriginals")
+
+// --- 3) Pixelkalibrierung / Einheiten ---
 def server = getCurrentServer()
 def cal    = server.getPixelCalibration()
 boolean hasCal = cal.hasPixelSizeMicrons()
@@ -79,12 +81,12 @@ if (useMicrons && !hasCal)
     println "WARNUNG: Keine Pixelkalibrierung im Bild gefunden – Schwellen werden als PIXEL interpretiert."
 
 // Schwellen in Pixel-Einheiten umrechnen (Geometrien liegen in Pixelkoordinaten vor)
-double distPixels         = toMicrons ? (mergeDistance / avgPx)        : mergeDistance
+double distPixels         = toMicrons ? (mergeDistance / avgPx)             : mergeDistance
 double areaPixelThreshold = toMicrons ? (vesselAreaThreshold / (pxW * pxH)) : vesselAreaThreshold
 double diamPixelThreshold = toMicrons ? (vesselDiameterThreshold / avgPx)   : vesselDiameterThreshold
 double bufferAmt          = distPixels / 2.0
 
-// --- 3) Geometrien verschmelzen ---
+// --- 4) Geometrien verschmelzen ---
 def plane = selected[0].getROI().getImagePlane()
 def geoms = selected.collect { it.getROI().getGeometry() }
 
@@ -105,7 +107,7 @@ for (int i = 0; i < unioned.getNumGeometries(); i++) {
         mergedGeoms << part
 }
 
-// --- 4) Klassifizieren nach Fläche & neue Annotationen erzeugen ---
+// --- 5) Klassifizieren nach Fläche & max. Durchmesser, neue Annotationen erzeugen ---
 // Vorhandene Projekt-Klassen wiederverwenden (case-insensitive), statt neue anzulegen.
 def availableClasses = getProject()?.getPathClasses() ?: []
 def resolveClass = { String name ->
@@ -123,8 +125,8 @@ def newAnnotations = []
 int nSmall = 0, nLarge = 0
 for (def g : mergedGeoms) {
     def roi   = GeometryTools.geometryToROI(g, plane)
-    double areaPx    = g.getArea()                                // Fläche in Pixel²
-    double maxDiamPx = 2.0 * new MinimumBoundingCircle(g).getRadius()  // max. Durchmesser in Pixel
+    double areaPx    = g.getArea()                                    // Fläche in Pixel²
+    double maxDiamPx = 2.0 * new MinimumBoundingCircle(g).getRadius() // max. Durchmesser in Pixel
     // ODER-Verknüpfung: large, wenn Fläche ODER Durchmesser über der Schwelle liegt
     boolean isLarge = (areaPx >= areaPixelThreshold) || (maxDiamPx >= diamPixelThreshold)
     def ann = PathObjects.createAnnotationObject(roi, isLarge ? largeClass : smallClass)
@@ -132,13 +134,13 @@ for (def g : mergedGeoms) {
     if (isLarge) nLarge++ else nSmall++
 }
 
-// --- 5) Hierarchie aktualisieren ---
+// --- 6) Hierarchie aktualisieren ---
 if (removeOriginals)
     removeObjects(selected, true)
 addObjects(newAnnotations)
 fireHierarchyUpdate()
 
-// --- 6) Zusammenfassung ---
+// --- 7) Zusammenfassung ---
 println "----------------------------------------------------"
 println "Ausgewählte Annotationen:   ${selected.size()}"
 println "Merge-Distanz:              ${mergeDistance} ${toMicrons ? 'µm' : 'px'}  (= ${(distPixels as double).round(2)} px)"
@@ -150,3 +152,5 @@ println "  -> ${smallClassName}: ${nSmall}"
 println "  -> ${largeClassName}: ${nLarge}"
 println "Originale entfernt:         ${removeOriginals}"
 println "----------------------------------------------------"
+Dialogs.showInfoNotification("Fertig",
+    "${newAnnotations.size()} Annotation(en): ${nLarge}x large, ${nSmall}x small vessel.")
