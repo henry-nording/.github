@@ -26,9 +26,9 @@
 import qupath.lib.objects.PathObjects
 import qupath.lib.roi.GeometryTools
 import qupath.lib.plugins.parameters.ParameterList
-import qupath.lib.gui.dialogs.Dialogs
 import org.locationtech.jts.operation.union.UnaryUnionOp
 import org.locationtech.jts.algorithm.MinimumBoundingCircle
+// Hinweis: 'Dialogs' wird von QuPath automatisch importiert – kein eigener Import nötig.
 
 
 // --- 1) Auswahl einsammeln (nur flächige Annotationen) ---
