@@ -26,9 +26,13 @@
 import qupath.lib.objects.PathObjects
 import qupath.lib.roi.GeometryTools
 import qupath.lib.plugins.parameters.ParameterList
+import qupath.lib.gui.dialogs.ParameterPanelFX
 import org.locationtech.jts.operation.union.UnaryUnionOp
 import org.locationtech.jts.algorithm.MinimumBoundingCircle
-// Hinweis: 'Dialogs' wird von QuPath automatisch importiert – kein eigener Import nötig.
+import javafx.application.Platform
+import java.util.concurrent.Callable
+import java.util.concurrent.FutureTask
+// Hinweis: 'Dialogs' (qupath.fx.dialogs.Dialogs) wird von QuPath automatisch importiert.
 
 
 // --- 1) Auswahl einsammeln (nur flächige Annotationen) ---
@@ -70,7 +74,22 @@ def params = new ParameterList()
     .addBooleanParameter("removeOriginals", "Originale nach Merge löschen", true,
         "Wenn deaktiviert, bleiben die ursprünglich ausgewählten Annotationen zusätzlich erhalten.")
 
-if (!Dialogs.showParameterDialog("Annotationen verschmelzen & klassifizieren", params))
+// Dialog auf dem JavaFX-Thread aufbauen und anzeigen (ersetzt das in neueren
+// QuPath-Versionen entfernte Dialogs.showParameterDialog).
+def showParamDialog = {
+    def pane = new ParameterPanelFX(params).getPane()
+    return Dialogs.showConfirmDialog("Annotationen verschmelzen & klassifizieren", pane)
+} as Callable<Boolean>
+
+boolean confirmed
+if (Platform.isFxApplicationThread()) {
+    confirmed = showParamDialog.call()
+} else {
+    def task = new FutureTask<Boolean>(showParamDialog)
+    Platform.runLater(task)
+    confirmed = task.get()
+}
+if (!confirmed)
     return   // Abbrechen gedrückt
 
 String  smallClassName          = params.getChoiceParameterValue("smallClass") as String
