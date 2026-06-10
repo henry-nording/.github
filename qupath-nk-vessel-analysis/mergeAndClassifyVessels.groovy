@@ -37,9 +37,10 @@ double  vesselAreaThreshold  = 1000.0    // Einheit: µm²  (bzw. px², falls us
 // false = Schwellen direkt in Pixel / Pixel²
 boolean useMicrons           = true
 
-// Klassennamen für die Einteilung
-String  smallClassName       = "Small vessel"
-String  largeClassName       = "Large vessel"
+// Klassennamen für die Einteilung – müssen den im Projekt vorhandenen Klassen
+// entsprechen (Groß-/Kleinschreibung egal, wird vorhandenen Klassen zugeordnet).
+String  smallClassName       = "small vessel"
+String  largeClassName       = "large vessel"
 
 // Ursprünglich ausgewählte Annotationen nach dem Merge löschen?
 // false = Originale bleiben zusätzlich erhalten (zum Vergleichen/Prüfen).
@@ -95,8 +96,18 @@ for (int i = 0; i < unioned.getNumGeometries(); i++) {
 }
 
 // --- 4) Klassifizieren nach Fläche & neue Annotationen erzeugen ---
-def smallClass = getPathClass(smallClassName)
-def largeClass = getPathClass(largeClassName)
+// Vorhandene Projekt-Klassen wiederverwenden (case-insensitive), statt neue anzulegen.
+def availableClasses = getProject()?.getPathClasses() ?: []
+def resolveClass = { String name ->
+    def existing = availableClasses.find { it != null && it.toString().equalsIgnoreCase(name) }
+    if (existing != null)
+        return existing
+    println "WARNUNG: Klasse '${name}' nicht im Projekt vorhanden – sie wird neu angelegt. " +
+            "Prüfe die Schreibweise in smallClassName/largeClassName."
+    return getPathClass(name)
+}
+def smallClass = resolveClass(smallClassName)
+def largeClass = resolveClass(largeClassName)
 
 def newAnnotations = []
 int nSmall = 0, nLarge = 0
