@@ -9,16 +9,18 @@
  *  2. Annotationen, die sehr nah beieinander liegen (Abstand <= mergeDistance) oder
  *     sich berühren/überlappen, werden zu einer Annotation zusammengeführt.
  *     -> behebt die Fragmentierung, die der Pixel-Classifier erzeugt hat.
- *  3. Jede resultierende (verschmolzene) Annotation wird in "small vessel" bzw.
- *     "large vessel" eingeteilt – anhand von Fläche UND max. Durchmesser:
- *     "large", sobald die Fläche ODER der max. Durchmesser über der Schwelle liegt.
+ *  3. Jede resultierende (verschmolzene) Annotation wird in zwei wählbare Klassen
+ *     eingeteilt – anhand von Fläche UND max. Durchmesser:
+ *     "große" Klasse, sobald die Fläche ODER der max. Durchmesser über der Schwelle
+ *     liegt, sonst "kleine" Klasse.
  *
- * Die Messparameter werden beim Start in einem DIALOGFENSTER abgefragt.
+ * Alle Mess- und Klassen-Parameter werden beim Start in einem DIALOGFENSTER abgefragt,
+ * dadurch ist das Skript auch für andere Färbungen (z. B. Synaptophysin) nutzbar.
  *
  * Bedienung:
  *  - Im Viewer die zu bearbeitenden Annotationen markieren
  *    (z. B. per Strg/Cmd-Klick mehrere, oder Objektliste -> mehrere selektieren).
- *  - Skript ausführen (Run) -> Parameter im Fenster eingeben -> OK.
+ *  - Skript ausführen (Run) -> Parameter & Klassen im Fenster wählen -> OK.
  */
 
 import qupath.lib.objects.PathObjects
@@ -27,13 +29,6 @@ import qupath.lib.plugins.parameters.ParameterList
 import qupath.lib.gui.dialogs.Dialogs
 import org.locationtech.jts.operation.union.UnaryUnionOp
 import org.locationtech.jts.algorithm.MinimumBoundingCircle
-
-// ====================== feste Einstellungen (selten zu ändern) ======================
-// Klassennamen – müssen den im Projekt vorhandenen Klassen entsprechen
-// (Groß-/Kleinschreibung egal, wird vorhandenen Klassen zugeordnet).
-String  smallClassName = "small vessel"
-String  largeClassName = "large vessel"
-// ====================================================================================
 
 
 // --- 1) Auswahl einsammeln (nur flächige Annotationen) ---
@@ -46,29 +41,53 @@ if (selected.isEmpty()) {
     return
 }
 
-// --- 2) Messparameter per Dialogfenster abfragen ---
+// --- 2) Vorhandene Projekt-Klassen als Auswahl vorbereiten ---
+def availableClasses = (getProject()?.getPathClasses() ?: []).findAll { it != null }
+def classNames = availableClasses.collect { it.toString() }
+if (classNames.isEmpty()) {
+    Dialogs.showWarningNotification("Keine Klassen",
+        "Im Projekt sind keine Klassen definiert. Lege zuerst die gewünschten Klassen an (z. B. 'small vessel' / 'large vessel').")
+    return
+}
+// Sinnvolle Vorauswahl, falls vorhanden
+def defaultSmall = classNames.find { it.equalsIgnoreCase("small vessel") } ?: classNames[0]
+def defaultLarge = classNames.find { it.equalsIgnoreCase("large vessel") } ?: classNames[-1]
+
+// --- 3) Mess- und Klassen-Parameter per Dialogfenster abfragen ---
 def params = new ParameterList()
+    .addChoiceParameter("smallClass", "Klasse für KLEINE Strukturen", defaultSmall, classNames,
+        "Klasse, die Annotationen unterhalb beider Schwellen zugewiesen wird.")
+    .addChoiceParameter("largeClass", "Klasse für GROSSE Strukturen", defaultLarge, classNames,
+        "Klasse, die Annotationen ab Erreichen einer der Schwellen zugewiesen wird.")
     .addDoubleParameter("mergeDistance", "Merge-Distanz", 5.0, "µm",
         "Maximaler Abstand, bis zu dem benachbarte Annotationen verschmolzen werden (0 = nur berührende/überlappende).")
     .addDoubleParameter("areaThreshold", "Flächen-Schwelle", 1000.0, "µm²",
-        "Annotationen mit dieser Fläche oder größer gelten als 'large vessel'.")
+        "Annotationen mit dieser Fläche oder größer gelten als 'große' Klasse.")
     .addDoubleParameter("diameterThreshold", "Durchmesser-Schwelle (max.)", 50.0, "µm",
-        "Annotationen mit diesem max. Durchmesser oder größer gelten als 'large vessel'.")
+        "Annotationen mit diesem max. Durchmesser oder größer gelten als 'große' Klasse.")
     .addBooleanParameter("useMicrons", "Schwellen in µm / µm² (sonst in Pixel)", true,
         "Nutzt die Pixelkalibrierung des Bildes. Ohne Kalibrierung wird automatisch in Pixel gerechnet.")
     .addBooleanParameter("removeOriginals", "Originale nach Merge löschen", true,
         "Wenn deaktiviert, bleiben die ursprünglich ausgewählten Annotationen zusätzlich erhalten.")
 
-if (!Dialogs.showParameterDialog("Gefäße verschmelzen & klassifizieren", params))
+if (!Dialogs.showParameterDialog("Annotationen verschmelzen & klassifizieren", params))
     return   // Abbrechen gedrückt
 
+String  smallClassName          = params.getChoiceParameterValue("smallClass") as String
+String  largeClassName          = params.getChoiceParameterValue("largeClass") as String
 double  mergeDistance           = params.getDoubleParameterValue("mergeDistance")
 double  vesselAreaThreshold     = params.getDoubleParameterValue("areaThreshold")
 double  vesselDiameterThreshold = params.getDoubleParameterValue("diameterThreshold")
 boolean useMicrons              = params.getBooleanParameterValue("useMicrons")
 boolean removeOriginals         = params.getBooleanParameterValue("removeOriginals")
 
-// --- 3) Pixelkalibrierung / Einheiten ---
+if (smallClassName == largeClassName) {
+    Dialogs.showWarningNotification("Gleiche Klasse",
+        "Kleine und große Klasse sind identisch ('${smallClassName}'). Bitte zwei verschiedene Klassen wählen.")
+    return
+}
+
+// --- 4) Pixelkalibrierung / Einheiten ---
 def server = getCurrentServer()
 def cal    = server.getPixelCalibration()
 boolean hasCal = cal.hasPixelSizeMicrons()
@@ -86,7 +105,7 @@ double areaPixelThreshold = toMicrons ? (vesselAreaThreshold / (pxW * pxH)) : ve
 double diamPixelThreshold = toMicrons ? (vesselDiameterThreshold / avgPx)   : vesselDiameterThreshold
 double bufferAmt          = distPixels / 2.0
 
-// --- 4) Geometrien verschmelzen ---
+// --- 5) Geometrien verschmelzen ---
 def plane = selected[0].getROI().getImagePlane()
 def geoms = selected.collect { it.getROI().getGeometry() }
 
@@ -107,16 +126,11 @@ for (int i = 0; i < unioned.getNumGeometries(); i++) {
         mergedGeoms << part
 }
 
-// --- 5) Klassifizieren nach Fläche & max. Durchmesser, neue Annotationen erzeugen ---
-// Vorhandene Projekt-Klassen wiederverwenden (case-insensitive), statt neue anzulegen.
-def availableClasses = getProject()?.getPathClasses() ?: []
+// --- 6) Klassifizieren nach Fläche & max. Durchmesser, neue Annotationen erzeugen ---
+// Gewählte Klassen auf die echten PathClass-Objekte abbilden.
 def resolveClass = { String name ->
-    def existing = availableClasses.find { it != null && it.toString().equalsIgnoreCase(name) }
-    if (existing != null)
-        return existing
-    println "WARNUNG: Klasse '${name}' nicht im Projekt vorhanden – sie wird neu angelegt. " +
-            "Prüfe die Schreibweise in smallClassName/largeClassName."
-    return getPathClass(name)
+    def existing = availableClasses.find { it.toString().equalsIgnoreCase(name) }
+    return existing != null ? existing : getPathClass(name)
 }
 def smallClass = resolveClass(smallClassName)
 def largeClass = resolveClass(largeClassName)
@@ -127,30 +141,30 @@ for (def g : mergedGeoms) {
     def roi   = GeometryTools.geometryToROI(g, plane)
     double areaPx    = g.getArea()                                    // Fläche in Pixel²
     double maxDiamPx = 2.0 * new MinimumBoundingCircle(g).getRadius() // max. Durchmesser in Pixel
-    // ODER-Verknüpfung: large, wenn Fläche ODER Durchmesser über der Schwelle liegt
+    // ODER-Verknüpfung: große Klasse, wenn Fläche ODER Durchmesser über der Schwelle liegt
     boolean isLarge = (areaPx >= areaPixelThreshold) || (maxDiamPx >= diamPixelThreshold)
     def ann = PathObjects.createAnnotationObject(roi, isLarge ? largeClass : smallClass)
     newAnnotations << ann
     if (isLarge) nLarge++ else nSmall++
 }
 
-// --- 6) Hierarchie aktualisieren ---
+// --- 7) Hierarchie aktualisieren ---
 if (removeOriginals)
     removeObjects(selected, true)
 addObjects(newAnnotations)
 fireHierarchyUpdate()
 
-// --- 7) Zusammenfassung ---
+// --- 8) Zusammenfassung ---
 println "----------------------------------------------------"
 println "Ausgewählte Annotationen:   ${selected.size()}"
 println "Merge-Distanz:              ${mergeDistance} ${toMicrons ? 'µm' : 'px'}  (= ${(distPixels as double).round(2)} px)"
-println "Klassifizierung:            large, wenn Fläche ODER max. Durchmesser >= Schwelle"
+println "Klassifizierung:            '${largeClassName}', wenn Fläche ODER max. Durchmesser >= Schwelle, sonst '${smallClassName}'"
 println "  Flächen-Schwelle:         ${vesselAreaThreshold} ${toMicrons ? 'µm²' : 'px²'}"
 println "  Durchmesser-Schwelle:     ${vesselDiameterThreshold} ${toMicrons ? 'µm' : 'px'}"
 println "Resultierende Annotationen: ${newAnnotations.size()}"
-println "  -> ${smallClassName}: ${nSmall}"
 println "  -> ${largeClassName}: ${nLarge}"
+println "  -> ${smallClassName}: ${nSmall}"
 println "Originale entfernt:         ${removeOriginals}"
 println "----------------------------------------------------"
 Dialogs.showInfoNotification("Fertig",
-    "${newAnnotations.size()} Annotation(en): ${nLarge}x large, ${nSmall}x small vessel.")
+    "${newAnnotations.size()} Annotation(en): ${nLarge}x '${largeClassName}', ${nSmall}x '${smallClassName}'.")
