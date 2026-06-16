@@ -94,6 +94,7 @@ def pick = { String wanted -> availableClasses.find { it.equalsIgnoreCase(wanted
 
 // ====================== 1) Dialog ======================
 def params = new ParameterList()
+    .addChoiceParameter("nkClass", "Klasse: NK-Zellen", pick("NK"), classOptions, "Nur Detections dieser Klasse werden als NK-Zellen gewertet. Non-NK-Zellen werden komplett ignoriert. '(nicht vorhanden)' = alle Detections verwenden.")
     .addChoiceParameter("smallClass", "Klasse: small vessel", pick("small vessel"), classOptions, "Klasse der kleinen Gefäße.")
     .addChoiceParameter("largeClass", "Klasse: large vessel", pick("large vessel"), classOptions, "Klasse der großen Gefäße.")
     .addChoiceParameter("synClass",   "Klasse: Synaptophysin", pick("Synaptophysin"), classOptions, "Klasse der Synaptophysin-Struktur.")
@@ -113,6 +114,7 @@ if (Platform.isFxApplicationThread()) confirmed = showDialog.call()
 else { def t = new FutureTask<Boolean>(showDialog); Platform.runLater(t); confirmed = t.get() }
 if (!confirmed) return
 
+String nkClass     = params.getChoiceParameterValue("nkClass") as String
 String smallClass  = params.getChoiceParameterValue("smallClass") as String
 String largeClass  = params.getChoiceParameterValue("largeClass") as String
 String synClass    = params.getChoiceParameterValue("synClass") as String
@@ -149,8 +151,12 @@ for (entry in imageList) {
         double avgPx = (pxW + pxH) / 2.0
         String imgName = entry.getImageName()
 
+        def isClass = { o, String c -> c != NONE && o.getPathClass() != null && o.getPathClass().toString().equalsIgnoreCase(c) }
+
         def annotations = hierarchy.getAnnotationObjects()
-        def detections  = hierarchy.getDetectionObjects()   // = NK-Zellen
+        def allDetections = hierarchy.getDetectionObjects()
+        // Nur NK-Zellen; Non-NK-Detections werden ignoriert
+        def detections = (nkClass == NONE) ? allDetections : allDetections.findAll { isClass(it, nkClass) }
 
         // 2a) Form-Messwerte (Annotationen + Detections)
         if (addShapes) {
@@ -173,7 +179,6 @@ for (entry in imageList) {
         def dSynNm   = findDistName(anyNames, synClass)
 
         // 2d) Gewebe-/Gefäß-Flächen (µm²) und Zählungen
-        def isClass = { o, String c -> c != NONE && o.getPathClass() != null && o.getPathClass().toString().equalsIgnoreCase(c) }
         double tissueAreaUm = annotations.findAll { isClass(it, tissueClass) }.sum { it.getROI().getScaledArea(pxW, pxH) } ?: 0.0
         double smallAreaUm  = annotations.findAll { isClass(it, smallClass)  }.sum { it.getROI().getScaledArea(pxW, pxH) } ?: 0.0
         double largeAreaUm  = annotations.findAll { isClass(it, largeClass)  }.sum { it.getROI().getScaledArea(pxW, pxH) } ?: 0.0
@@ -254,8 +259,15 @@ def annFile = new File(outDir, "ALL_vessels_annotations" + ext)
 def sumFile = new File(outDir, "SUMMARY_per_image" + ext)
 
 // ====================== 4) Projektweiter Objekt-Export ======================
-new MeasurementExporter().imageList(imageList).separator(sep)
-    .exportType(PathDetectionObject.class).exportMeasurements(detFile)
+def detExporter = new MeasurementExporter().imageList(imageList).separator(sep)
+    .exportType(PathDetectionObject.class)
+if (nkClass != NONE) {
+    // Nur NK-Zellen exportieren – Non-NK-Detections ausschließen
+    detExporter = detExporter.filter({ p ->
+        p.getPathClass() != null && p.getPathClass().toString().equalsIgnoreCase(nkClass)
+    } as java.util.function.Predicate)
+}
+detExporter.exportMeasurements(detFile)
 new MeasurementExporter().imageList(imageList).separator(sep)
     .exportType(PathAnnotationObject.class).exportMeasurements(annFile)
 
