@@ -131,7 +131,9 @@ switch (sepChoice) {
     case "Semikolon (;)": sep = ";";  ext = ".csv"; break
     default:              sep = "\t"; ext = ".tsv"; break
 }
-def shapeFeatures = [AREA, LENGTH, CIRCULARITY, SOLIDITY, MAX_DIAMETER, MIN_DIAMETER] as ObjectMeasurements.ShapeFeatures[]
+// Area & Length (Perimeter) liefert der Exporter automatisch als Spalte (Area µm^2 / Length µm)
+// -> hier NICHT erneut zur Messwertliste hinzufügen (sonst "Duplicate measurement"-Warnungen).
+def shapeFeatures = [CIRCULARITY, SOLIDITY, MAX_DIAMETER, MIN_DIAMETER] as ObjectMeasurements.ShapeFeatures[]
 def intensityMeas = [ObjectMeasurements.Measurements.MEAN, ObjectMeasurements.Measurements.MAX,
                      ObjectMeasurements.Measurements.MIN, ObjectMeasurements.Measurements.STD_DEV] as List
 
