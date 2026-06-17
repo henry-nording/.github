@@ -186,7 +186,7 @@ for (entry in imageList) {
         }
 
         // 2c) Distanz-Messwertnamen (Spatial Analysis) bestimmen
-        def anyNames = detections.isEmpty() ? [] : measNames(detections[0])
+        def anyNames = allDetections.isEmpty() ? [] : measNames(allDetections[0])
         def dSmallNm = findDistName(anyNames, smallClass)
         def dLargeNm = findDistName(anyNames, largeClass)
         def dSynNm   = findDistName(anyNames, synClass)
@@ -236,6 +236,22 @@ for (entry in imageList) {
             putVal(det, "Image vessel area fraction pct", vesselAreaFraction)
         }
 
+        // 2f-bg) Hintergrund: dieselbe Distanz-Statistik über NICHT-NK-Zellen
+        //        (= alle übrigen Detections). Ermöglicht den NK-vs-Hintergrund-Anreicherungstest.
+        def nonNK = (nkClass == NONE) ? [] : allDetections.findAll { !isClass(it, nkClass) }
+        def bgSmall = []; def bgLarge = []; def bgSyn = []
+        int bgPeri = 0
+        nonNK.each { det ->
+            double ds = getVal(det, dSmallNm)
+            double dl = getVal(det, dLargeNm)
+            double dy = getVal(det, dSynNm)
+            bgSmall << ds; bgLarge << dl; bgSyn << dy
+            def vd = [ds, dl].findAll { !Double.isNaN(it) }
+            double nv = vd.isEmpty() ? Double.NaN : vd.min()
+            if (!Double.isNaN(nv) && nv <= periThr) bgPeri++
+        }
+        int bgCount = nonNK.size()
+
         // 2g) NK-Zellen pro Gefäß-Annotation (im Umkreis nkRadius)
         // Erst veraltete "NK within ...um count"-Spalten früherer Läufe entfernen
         annotations.each { stripByPrefix(it, "NK within ") }
@@ -257,7 +273,13 @@ for (entry in imageList) {
             median_dist_small_um: median(dsSmall), mean_dist_small_um: mean(dsSmall),
             median_dist_large_um: median(dsLarge), mean_dist_large_um: mean(dsLarge),
             median_dist_syn_um: median(dsSyn),     mean_dist_syn_um: mean(dsSyn),
-            perivascular_pct: nkCount > 0 ? (nPeri * 100.0 / nkCount) : Double.NaN
+            perivascular_pct: nkCount > 0 ? (nPeri * 100.0 / nkCount) : Double.NaN,
+            // Hintergrund (Nicht-NK-Zellen) für Anreicherungstest
+            nonNK_count: bgCount,
+            nonNK_median_dist_small_um: median(bgSmall), nonNK_mean_dist_small_um: mean(bgSmall),
+            nonNK_median_dist_large_um: median(bgLarge), nonNK_mean_dist_large_um: mean(bgLarge),
+            nonNK_median_dist_syn_um: median(bgSyn),     nonNK_mean_dist_syn_um: mean(bgSyn),
+            nonNK_perivascular_pct: bgCount > 0 ? (bgPeri * 100.0 / bgCount) : Double.NaN
         ]
         println "verarbeitet: ${imgName}  (NK=${nkCount}, small=${nSmall}, large=${nLarge})"
     } catch (ex) {
@@ -290,7 +312,11 @@ new MeasurementExporter().imageList(imageList).separator(sep)
 def cols = ["Image","NK_count","small_vessels","large_vessels","vessels_total",
             "tissue_area_mm2","NK_density_per_mm2","vessel_area_fraction_pct","synaptophysin_area_fraction_pct",
             "median_dist_small_um","mean_dist_small_um","median_dist_large_um","mean_dist_large_um",
-            "median_dist_syn_um","mean_dist_syn_um","perivascular_pct"]
+            "median_dist_syn_um","mean_dist_syn_um","perivascular_pct",
+            "nonNK_count",
+            "nonNK_median_dist_small_um","nonNK_mean_dist_small_um",
+            "nonNK_median_dist_large_um","nonNK_mean_dist_large_um",
+            "nonNK_median_dist_syn_um","nonNK_mean_dist_syn_um","nonNK_perivascular_pct"]
 sumFile.withWriter("UTF-8") { w ->
     w.writeLine(cols.join(sep))
     summaryRows.each { row ->
