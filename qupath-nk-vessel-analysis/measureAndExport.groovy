@@ -55,6 +55,17 @@ def putVal = { obj, String name, double val ->
     def ml = obj.getMeasurementList()
     try { ml.put(name, val) } catch (e) { ml.addMeasurement(name, val) }
 }
+// Alte/abgelaufene Messwerte entfernen, deren Name mit prefix beginnt (z.B. von früheren Läufen)
+def stripByPrefix = { obj, String prefix ->
+    try {
+        obj.getMeasurements().keySet().removeIf({ k -> k != null && k.startsWith(prefix) })
+    } catch (e) {
+        def ml = obj.getMeasurementList()
+        measNames(obj).findAll { it != null && it.startsWith(prefix) }.each { n ->
+            try { ml.remove(n) } catch (ee) {}
+        }
+    }
+}
 // Distanz-Messwert (Spatial Analysis) zu einer Klasse finden – Namensschema variiert
 def findDistName = { names, String classKeyword ->
     if (classKeyword == null || classKeyword == NONE) return null
@@ -226,6 +237,8 @@ for (entry in imageList) {
         }
 
         // 2g) NK-Zellen pro Gefäß-Annotation (im Umkreis nkRadius)
+        // Erst veraltete "NK within ...um count"-Spalten früherer Läufe entfernen
+        annotations.each { stripByPrefix(it, "NK within ") }
         double radiusPx = avgPx > 0 ? (nkRadius / avgPx) : nkRadius
         def detGeoms = detections.collect { it.getROI().getGeometry() }
         annotations.findAll { isClass(it, smallClass) || isClass(it, largeClass) }.each { ves ->
