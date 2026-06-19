@@ -203,6 +203,9 @@ for (entry in imageList) {
 
         double tissueAreaMm2 = tissueAreaUm / 1_000_000.0
         double nkDensity = tissueAreaMm2 > 0 ? nkCount / tissueAreaMm2 : Double.NaN
+        double smallVesselDensity = tissueAreaMm2 > 0 ? nSmall / tissueAreaMm2 : Double.NaN
+        double largeVesselDensity = tissueAreaMm2 > 0 ? nLarge / tissueAreaMm2 : Double.NaN
+        double vesselDensity      = tissueAreaMm2 > 0 ? nVessels / tissueAreaMm2 : Double.NaN
         double vesselAreaFraction = tissueAreaUm > 0 ? (smallAreaUm + largeAreaUm) / tissueAreaUm * 100.0 : Double.NaN
         double synAreaFraction    = tissueAreaUm > 0 ? synAreaUm / tissueAreaUm * 100.0 : Double.NaN
 
@@ -262,7 +265,14 @@ for (entry in imageList) {
             bgSmall << ds; bgLarge << dl; bgSyn << dy
             def vd = [ds, dl].findAll { !Double.isNaN(it) }
             double nv = vd.isEmpty() ? Double.NaN : vd.min()
-            if (!Double.isNaN(nv) && nv <= periThr) bgPeri++
+            boolean peri = !Double.isNaN(nv) && nv <= periThr
+            if (peri) bgPeri++
+            // dieselben sauberen Distanzspalten wie bei NK-Zellen -> für Rohdaten-Export
+            putVal(det, "Dist small vessel um", ds)
+            putVal(det, "Dist large vessel um", dl)
+            putVal(det, "Dist synaptophysin um", dy)
+            putVal(det, "Dist nearest vessel um", nv)
+            putVal(det, "Perivascular (0/1)", peri ? 1.0 : 0.0)
         }
         int bgCount = nonNK.size()
 
@@ -283,6 +293,9 @@ for (entry in imageList) {
             Image: imgName, NK_count: nkCount,
             small_vessels: nSmall, large_vessels: nLarge, vessels_total: nVessels,
             tissue_area_mm2: tissueAreaMm2, NK_density_per_mm2: nkDensity,
+            small_vessel_density_per_mm2: smallVesselDensity,
+            large_vessel_density_per_mm2: largeVesselDensity,
+            vessel_density_per_mm2: vesselDensity,
             vessel_area_fraction_pct: vesselAreaFraction, synaptophysin_area_fraction_pct: synAreaFraction,
             median_dist_small_um: median(dsSmall), mean_dist_small_um: mean(dsSmall),
             median_dist_large_um: median(dsLarge), mean_dist_large_um: mean(dsLarge),
@@ -309,9 +322,10 @@ for (entry in imageList) {
 // ====================== 3) Export-Ziel ======================
 def outDir = new File(buildFilePath(PROJECT_BASE_DIR, "measurements"))
 outDir.mkdirs()
-def detFile = new File(outDir, "ALL_detections_NKcells" + ext)
-def annFile = new File(outDir, "ALL_vessels_annotations" + ext)
-def sumFile = new File(outDir, "SUMMARY_per_image" + ext)
+def detFile    = new File(outDir, "ALL_detections_NKcells" + ext)
+def nonNKFile  = new File(outDir, "ALL_detections_nonNK" + ext)
+def annFile    = new File(outDir, "ALL_vessels_annotations" + ext)
+def sumFile    = new File(outDir, "SUMMARY_per_image" + ext)
 
 // ====================== 4) Projektweiter Objekt-Export ======================
 def detExporter = new MeasurementExporter().imageList(imageList).separator(sep)
@@ -323,12 +337,24 @@ if (nkClass != NONE) {
     } as java.util.function.Predicate)
 }
 detExporter.exportMeasurements(detFile)
+
+// Nicht-NK-Zellen separat exportieren (Rohdaten der Hintergrund-Distanzen)
+if (nkClass != NONE) {
+    new MeasurementExporter().imageList(imageList).separator(sep)
+        .exportType(PathDetectionObject.class)
+        .filter({ p ->
+            p.getPathClass() == null || !p.getPathClass().toString().equalsIgnoreCase(nkClass)
+        } as java.util.function.Predicate)
+        .exportMeasurements(nonNKFile)
+}
 new MeasurementExporter().imageList(imageList).separator(sep)
     .exportType(PathAnnotationObject.class).exportMeasurements(annFile)
 
 // ====================== 5) Summary-Tabelle schreiben ======================
 def cols = ["Image","NK_count","small_vessels","large_vessels","vessels_total",
-            "tissue_area_mm2","NK_density_per_mm2","vessel_area_fraction_pct","synaptophysin_area_fraction_pct",
+            "tissue_area_mm2","NK_density_per_mm2",
+            "small_vessel_density_per_mm2","large_vessel_density_per_mm2","vessel_density_per_mm2",
+            "vessel_area_fraction_pct","synaptophysin_area_fraction_pct",
             "median_dist_small_um","mean_dist_small_um","median_dist_large_um","mean_dist_large_um",
             "median_dist_syn_um","mean_dist_syn_um","perivascular_pct",
             "pct_zone_0_5um","pct_zone_5_10um","pct_zone_10_20um","pct_zone_over20um",
@@ -351,9 +377,10 @@ int totalNK = summaryRows.sum { it.NK_count } ?: 0
 println "===================================================="
 println "Bilder verarbeitet:   ${summaryRows.size()}"
 println "NK-Zellen gesamt:     ${totalNK}"
-println "Detections  -> ${detFile.getAbsolutePath()}"
-println "Annotationen-> ${annFile.getAbsolutePath()}"
-println "Summary     -> ${sumFile.getAbsolutePath()}"
+println "NK-Detections   -> ${detFile.getAbsolutePath()}"
+if (nkClass != NONE) println "nonNK-Detections-> ${nonNKFile.getAbsolutePath()}"
+println "Annotationen    -> ${annFile.getAbsolutePath()}"
+println "Summary         -> ${sumFile.getAbsolutePath()}"
 println "===================================================="
 Dialogs.showInfoNotification("Export fertig",
     "Bilder: ${summaryRows.size()}, NK gesamt: ${totalNK}\nOrdner: ${outDir.getAbsolutePath()}")

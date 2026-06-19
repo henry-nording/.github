@@ -93,9 +93,10 @@ def write_raw(wb, title, header, rows, maxcols=None):
 # ---------------------------- Build ----------------------------
 def build(measdir, out):
     det_h, det = load(find(measdir, "ALL_detections_NKcells"))
+    non_h, non = load(find(measdir, "ALL_detections_nonNK"))
     ves_h, ves = load(find(measdir, "ALL_vessels_annotations"))
     sum_h, summ = load(find(measdir, "SUMMARY_per_image"))
-    print(f"  detections={len(det)}  vessels={len(ves)}  summary={len(summ)}")
+    print(f"  NK={len(det)}  nonNK={len(non)}  vessels={len(ves)}  summary={len(summ)}")
 
     wb = Workbook(); wb.remove(wb.active)
 
@@ -166,6 +167,36 @@ def build(measdir, out):
         ws.append(row)
     ws.freeze_panes = "A2"
 
+    # ----- Pivot_nonNKcells (Distanz-Mittelwerte je Bild, Hintergrund) -----
+    if non:
+        img_n = non_h[0]
+        dist_pick = [(lbl, src) for lbl, src in [
+            ("Dist small vessel um", "Dist small vessel um"),
+            ("Dist large vessel um", "Dist large vessel um"),
+            ("Dist nearest vessel um", "Dist nearest vessel um"),
+            ("Dist synaptophysin um", "Dist synaptophysin um"),
+            ("Perivascular (0/1)", "Perivascular (0/1)"),
+        ] if src in non_h]
+        nagg = defaultdict(lambda: defaultdict(list)); ncnt = defaultdict(int)
+        for r in non:
+            im = r[img_n]; ncnt[im] += 1
+            for lbl, src in dist_pick:
+                v = r.get(src)
+                if isinstance(v, float):
+                    nagg[im][lbl].append(v)
+        ws = wb.create_sheet("Pivot_nonNKcells")
+        ws.append([img_n, "animal", "cond", "panel", "n_nonNK"] + [lbl for lbl, _ in dist_pick])
+        for c in ws[1]:
+            c.font = HB; c.fill = GREY
+        for im in sorted(ncnt):
+            f = parse_factors(im)
+            row = [im, f["animal"], f["cond"], f["panel"], ncnt[im]]
+            for lbl, _ in dist_pick:
+                vals = nagg[im][lbl]
+                row.append(round(mean(vals), 3) if vals else None)
+            ws.append(row)
+        ws.freeze_panes = "A2"
+
     # ----- Pivot_vessels (Summen je Bild) -----
     img_v = ves_h[0]
     vcols = [c for c in ["Num Detections", "Num NK-cell", "NK within 20um count", "NK within 5um count"] if c in ves_h]
@@ -186,7 +217,9 @@ def build(measdir, out):
     ws.freeze_panes = "A2"
 
     # ----- PerAnimal_condition -----
-    metrics = [c for c in ["NK_density_per_mm2", "perivascular_pct", "vessel_area_fraction_pct",
+    metrics = [c for c in ["NK_density_per_mm2",
+                           "small_vessel_density_per_mm2", "large_vessel_density_per_mm2", "vessel_density_per_mm2",
+                           "perivascular_pct", "vessel_area_fraction_pct",
                            "mean_dist_small_um", "mean_dist_large_um", "mean_dist_syn_um",
                            "pct_zone_0_5um", "pct_zone_5_10um", "pct_zone_10_20um", "pct_zone_over20um"] if c in sum_h]
     pa = defaultdict(list)
@@ -215,6 +248,8 @@ def build(measdir, out):
     write_raw(wb, "Grunddaten_summary", sum_h, summ)
     write_raw(wb, "Grunddaten_vessels", ves_h, ves)
     write_raw(wb, "Grunddaten_NKcells", det_h, det)
+    if non:
+        write_raw(wb, "Grunddaten_nonNK", non_h, non)
 
     wb.save(out)
     print(f"WROTE {out}  ({len(wb.sheetnames)} sheets)")

@@ -74,6 +74,9 @@ def main(measdir, out):
         ("A10_Zone_5_10um : % NK 5-10µm vom Gefäß, OP vs N          -> Mann-Whitney", None),
         ("A11_Zone_10_20um: % NK 10-20µm vom Gefäß, OP vs N         -> Mann-Whitney", None),
         ("A12_Zone_over20um: % NK >20µm vom Gefäß, OP vs N          -> Mann-Whitney", None),
+        ("", None),
+        ("A13_SmallVesselDensity : small vessels/mm², OP vs N       -> Mann-Whitney", None),
+        ("A14_LargeVesselDensity : large vessels/mm², OP vs N       -> Mann-Whitney", None),
     ], 1):
         c = ws0.cell(i, 1, t)
         if fnt: c.font = fnt
@@ -193,8 +196,21 @@ def main(measdir, out):
                 g[d["cond"]].append(d[col])
         block(sheet, ["OP", "N"], g, f"% NK im Abstand {label} vom nächsten Gefäß, IB4. Mann-Whitney.")
 
+    # A13/A14 vessel density (IB4, OP vs N)
+    for sheet, col, label in [
+        ("A13_SmallVesselDensity", "small_vessel_density_per_mm2", "Small vessels"),
+        ("A14_LargeVesselDensity", "large_vessel_density_per_mm2", "Large vessels"),
+    ]:
+        g = {"OP": [], "N": []}
+        for d in recs:
+            if d["panel"] == "IB4" and isinstance(d.get(col), float):
+                g[d["cond"]].append(d[col])
+        block(sheet, ["OP", "N"], g, f"{label} pro mm² Gewebe, IB4. Mann-Whitney.")
+
     # AnimalLevel means
-    metrics = ["NK_density_per_mm2", "perivascular_pct",
+    metrics = ["NK_density_per_mm2",
+               "small_vessel_density_per_mm2", "large_vessel_density_per_mm2",
+               "perivascular_pct",
                "pct_zone_0_5um", "pct_zone_5_10um", "pct_zone_10_20um", "pct_zone_over20um",
                "mean_dist_small_um", "mean_dist_large_um",
                "mean_dist_syn_um", "nonNK_perivascular_pct", "nonNK_mean_dist_syn_um"]

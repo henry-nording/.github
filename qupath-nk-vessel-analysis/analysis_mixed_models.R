@@ -75,6 +75,10 @@ fit_mixed <- function(var, panel, label) {
 }
 fit_mixed("NK_density_per_mm2", "IB4", "NK-Dichte OP vs N")
 fit_mixed("perivascular_pct",   "IB4", "Perivaskulärer Anteil OP vs N")
+if ("small_vessel_density_per_mm2" %in% names(s))
+  fit_mixed("small_vessel_density_per_mm2", "IB4", "Small-vessel-Dichte OP vs N")
+if ("large_vessel_density_per_mm2" %in% names(s))
+  fit_mixed("large_vessel_density_per_mm2", "IB4", "Large-vessel-Dichte OP vs N")
 fit_mixed("mean_dist_syn_um",   "Syn", "Distanz zu Synaptophysin OP vs N")
 
 # ----------------------------------------------------------------------------
