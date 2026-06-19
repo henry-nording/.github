@@ -187,7 +187,8 @@ def build(measdir, out):
 
     # ----- PerAnimal_condition -----
     metrics = [c for c in ["NK_density_per_mm2", "perivascular_pct", "vessel_area_fraction_pct",
-                           "mean_dist_small_um", "mean_dist_large_um", "mean_dist_syn_um"] if c in sum_h]
+                           "mean_dist_small_um", "mean_dist_large_um", "mean_dist_syn_um",
+                           "pct_zone_0_5um", "pct_zone_5_10um", "pct_zone_10_20um", "pct_zone_over20um"] if c in sum_h]
     pa = defaultdict(list)
     for r in summ:
         f = parse_factors(r[img_c])

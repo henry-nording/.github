@@ -69,6 +69,11 @@ def main(measdir, out):
         ("A6_Activation_by_location : NKp46/Flaeche peri vs nicht -> Wilcoxon paired", None),
         ("A7_Perivasc_NK_vs_background : NK vs Nicht-NK, gepaart  -> Wilcoxon paired (ANREICHERUNG)", HB),
         ("A8_DistSyn_NK_vs_background  : NK vs Nicht-NK, gepaart  -> Wilcoxon paired (ANREICHERUNG)", HB),
+        ("", None),
+        ("A9_Zone_0_5um   : % NK ≤5µm vom Gefäß, OP vs N            -> Mann-Whitney", None),
+        ("A10_Zone_5_10um : % NK 5-10µm vom Gefäß, OP vs N          -> Mann-Whitney", None),
+        ("A11_Zone_10_20um: % NK 10-20µm vom Gefäß, OP vs N         -> Mann-Whitney", None),
+        ("A12_Zone_over20um: % NK >20µm vom Gefäß, OP vs N          -> Mann-Whitney", None),
     ], 1):
         c = ws0.cell(i, 1, t)
         if fnt: c.font = fnt
@@ -175,8 +180,23 @@ def main(measdir, out):
                       and isinstance(d.get("nonNK_mean_dist_syn_um"), float) else None),
            "ANREICHERUNG: NK vs Nicht-NK Distanz->Synaptophysin, gepaart je Syn-Bild. Wilcoxon paired.", recs)
 
+    # A9-A12 distance zones (IB4, OP vs N)
+    for sheet, col, label in [
+        ("A9_Zone_0_5um",    "pct_zone_0_5um",    "≤5µm"),
+        ("A10_Zone_5_10um",  "pct_zone_5_10um",   "5–10µm"),
+        ("A11_Zone_10_20um", "pct_zone_10_20um",  "10–20µm"),
+        ("A12_Zone_over20um","pct_zone_over20um",  ">20µm"),
+    ]:
+        g = {"OP": [], "N": []}
+        for d in recs:
+            if d["panel"] == "IB4" and isinstance(d.get(col), float):
+                g[d["cond"]].append(d[col])
+        block(sheet, ["OP", "N"], g, f"% NK im Abstand {label} vom nächsten Gefäß, IB4. Mann-Whitney.")
+
     # AnimalLevel means
-    metrics = ["NK_density_per_mm2", "perivascular_pct", "mean_dist_small_um", "mean_dist_large_um",
+    metrics = ["NK_density_per_mm2", "perivascular_pct",
+               "pct_zone_0_5um", "pct_zone_5_10um", "pct_zone_10_20um", "pct_zone_over20um",
+               "mean_dist_small_um", "mean_dist_large_um",
                "mean_dist_syn_um", "nonNK_perivascular_pct", "nonNK_mean_dist_syn_um"]
     metrics = [m for m in metrics if m in sum_h]
     agg = defaultdict(list)

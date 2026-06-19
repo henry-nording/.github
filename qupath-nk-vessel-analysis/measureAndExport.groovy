@@ -206,9 +206,10 @@ for (entry in imageList) {
         double vesselAreaFraction = tissueAreaUm > 0 ? (smallAreaUm + largeAreaUm) / tissueAreaUm * 100.0 : Double.NaN
         double synAreaFraction    = tissueAreaUm > 0 ? synAreaUm / tissueAreaUm * 100.0 : Double.NaN
 
-        // 2e) Distanz-Statistik + perivaskulärer Anteil (über die NK-Zellen)
+        // 2e) Distanz-Statistik + perivaskulärer Anteil + Distanzzonen (über die NK-Zellen)
         def dsSmall = []; def dsLarge = []; def dsSyn = []
         int nPeri = 0
+        int nZone05 = 0, nZone510 = 0, nZone1020 = 0, nZoneOver20 = 0
         detections.each { det ->
             double ds = getVal(det, dSmallNm)
             double dl = getVal(det, dLargeNm)
@@ -221,6 +222,15 @@ for (entry in imageList) {
             if (peri) nPeri++
             boolean nearestLarge = (!Double.isNaN(dl)) && (Double.isNaN(ds) || dl < ds)
 
+            // Distanzzonen (je NK-Zelle exklusiv: 0-5, 5-10, 10-20, >20 µm)
+            int z05 = 0, z510 = 0, z1020 = 0, zOver20 = 0
+            if (!Double.isNaN(nearestVessel)) {
+                if      (nearestVessel <=  5.0) { z05     = 1; nZone05++ }
+                else if (nearestVessel <= 10.0) { z510    = 1; nZone510++ }
+                else if (nearestVessel <= 20.0) { z1020   = 1; nZone1020++ }
+                else                            { zOver20 = 1; nZoneOver20++ }
+            }
+
             // 2f) je NK-Zelle: bereinigte + abgeleitete Spalten und Bild-Kennzahlen
             putVal(det, "Dist small vessel um", ds)
             putVal(det, "Dist large vessel um", dl)
@@ -228,6 +238,10 @@ for (entry in imageList) {
             putVal(det, "Dist nearest vessel um", nearestVessel)
             putVal(det, "Perivascular (0/1)", peri ? 1.0 : 0.0)
             putVal(det, "Nearest vessel is large (0/1)", nearestLarge ? 1.0 : 0.0)
+            putVal(det, "Zone 0-5um (0/1)",   (double) z05)
+            putVal(det, "Zone 5-10um (0/1)",  (double) z510)
+            putVal(det, "Zone 10-20um (0/1)", (double) z1020)
+            putVal(det, "Zone >20um (0/1)",   (double) zOver20)
             putVal(det, "Image NK count", (double) nkCount)
             putVal(det, "Image small vessel count", (double) nSmall)
             putVal(det, "Image large vessel count", (double) nLarge)
@@ -274,6 +288,10 @@ for (entry in imageList) {
             median_dist_large_um: median(dsLarge), mean_dist_large_um: mean(dsLarge),
             median_dist_syn_um: median(dsSyn),     mean_dist_syn_um: mean(dsSyn),
             perivascular_pct: nkCount > 0 ? (nPeri * 100.0 / nkCount) : Double.NaN,
+            pct_zone_0_5um:    nkCount > 0 ? (nZone05     * 100.0 / nkCount) : Double.NaN,
+            pct_zone_5_10um:   nkCount > 0 ? (nZone510    * 100.0 / nkCount) : Double.NaN,
+            pct_zone_10_20um:  nkCount > 0 ? (nZone1020   * 100.0 / nkCount) : Double.NaN,
+            pct_zone_over20um: nkCount > 0 ? (nZoneOver20 * 100.0 / nkCount) : Double.NaN,
             // Hintergrund (Nicht-NK-Zellen) für Anreicherungstest
             nonNK_count: bgCount,
             nonNK_median_dist_small_um: median(bgSmall), nonNK_mean_dist_small_um: mean(bgSmall),
@@ -313,6 +331,7 @@ def cols = ["Image","NK_count","small_vessels","large_vessels","vessels_total",
             "tissue_area_mm2","NK_density_per_mm2","vessel_area_fraction_pct","synaptophysin_area_fraction_pct",
             "median_dist_small_um","mean_dist_small_um","median_dist_large_um","mean_dist_large_um",
             "median_dist_syn_um","mean_dist_syn_um","perivascular_pct",
+            "pct_zone_0_5um","pct_zone_5_10um","pct_zone_10_20um","pct_zone_over20um",
             "nonNK_count",
             "nonNK_median_dist_small_um","nonNK_mean_dist_small_um",
             "nonNK_median_dist_large_um","nonNK_mean_dist_large_um",
