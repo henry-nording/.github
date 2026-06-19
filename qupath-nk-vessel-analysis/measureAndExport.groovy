@@ -209,6 +209,17 @@ for (entry in imageList) {
         double vesselAreaFraction = tissueAreaUm > 0 ? (smallAreaUm + largeAreaUm) / tissueAreaUm * 100.0 : Double.NaN
         double synAreaFraction    = tissueAreaUm > 0 ? synAreaUm / tissueAreaUm * 100.0 : Double.NaN
 
+        // 2e-pre) DOUBLE-CHECK: alle vom Skript geschriebenen Messwerte aus früheren Läufen
+        //         von ALLEN Detections entfernen, bevor neue Werte gesetzt werden.
+        //         Verhindert Dopplungen und sichert, dass nur die aktuell berechneten
+        //         Werte (aktuelle Parameter: periThr, nkRadius, Klassen) exportiert werden.
+        def scriptPrefixes = ["Dist ", "Perivascular", "Nearest vessel", "Zone ", "Image "]
+        allDetections.each { det ->
+            scriptPrefixes.each { prefix -> stripByPrefix(det, prefix) }
+        }
+        // Annotationen: "NK within ...um count" wird direkt vor dem Neuschreiben in 2g bereinigt.
+        println "  [check] ${imgName}: ${allDetections.size()} Detections bereinigt (Schritt 2e-pre)"
+
         // 2e) Distanz-Statistik + perivaskulärer Anteil + Distanzzonen (über die NK-Zellen)
         def dsSmall = []; def dsLarge = []; def dsSyn = []
         int nPeri = 0
