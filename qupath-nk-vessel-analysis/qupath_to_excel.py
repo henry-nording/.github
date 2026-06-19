@@ -128,31 +128,42 @@ def build(measdir, out):
         c.font = HB
     ws.freeze_panes = "A2"
 
-    # ----- Pivot_zones (Zonenprofil je Bild: % NK-Zellen je Abstandszone) -----
-    zone_cols = [("pct_zone_0_5um", "% 0-5µm"), ("pct_zone_5_10um", "% 5-10µm"),
-                 ("pct_zone_10_20um", "% 10-20µm"), ("pct_zone_over20um", "% >20µm")]
-    zone_cols = [(src, lbl) for src, lbl in zone_cols if src in sum_h]
-    if zone_cols:
+    # ----- Pivot_zones (Zonenprofil je Bild: absolute Zahl + % NK-Zellen je Abstandszone) -----
+    zone_pairs = [
+        ("NK_count_zone_0_5um",    "pct_zone_0_5um",    "n 0-5µm",  "% 0-5µm"),
+        ("NK_count_zone_5_10um",   "pct_zone_5_10um",   "n 5-10µm", "% 5-10µm"),
+        ("NK_count_zone_10_20um",  "pct_zone_10_20um",  "n 10-20µm","% 10-20µm"),
+        ("NK_count_zone_over20um", "pct_zone_over20um", "n >20µm",  "% >20µm"),
+    ]
+    zone_pairs = [(nc, pc, nl, pl) for nc, pc, nl, pl in zone_pairs if pc in sum_h]
+    if zone_pairs:
         ws = wb.create_sheet("Pivot_zones")
-        ws.append([img_c, "animal", "cond", "panel", "n_NK"] + [lbl for _, lbl in zone_cols] + ["Summe %"])
+        hdr = [img_c, "animal", "cond", "panel", "n_NK"]
+        for _, _, nl, pl in zone_pairs:
+            hdr += [nl, pl]
+        hdr.append("Summe %")
+        ws.append(hdr)
         for c in ws[1]:
             c.font = HB; c.fill = GREY
-        ztot = defaultdict(list); ncnt = []
+        ptot = defaultdict(list)
         for r in summ:
             f = parse_factors(r[img_c])
             if f["is_control"]:
                 continue
-            vals = [r.get(src) for src, _ in zone_cols]
-            ssum = round(sum(v for v in vals if isinstance(v, float)), 1)
-            ws.append([r[img_c], f["animal"], f["cond"], f["panel"], r.get("NK_count")]
-                      + [round(v, 2) if isinstance(v, float) else None for v in vals] + [ssum])
-            for (src, _), v in zip(zone_cols, vals):
-                if isinstance(v, float):
-                    ztot[src].append(v)
+            row = [r[img_c], f["animal"], f["cond"], f["panel"], r.get("NK_count")]
+            psum = 0.0
+            for nc, pc, _, _ in zone_pairs:
+                nv = r.get(nc); pv = r.get(pc)
+                row += [int(nv) if isinstance(nv, float) else nv,
+                        round(pv, 2) if isinstance(pv, float) else None]
+                if isinstance(pv, float):
+                    psum += pv; ptot[pc].append(pv)
+            row.append(round(psum, 1))
+            ws.append(row)
         grow = ["Mittel über Bilder", "", "", "", ""]
-        for src, _ in zone_cols:
-            vv = ztot.get(src, [])
-            grow.append(round(mean(vv), 2) if vv else None)
+        for _, pc, _, _ in zone_pairs:
+            vv = ptot.get(pc, [])
+            grow += [None, round(mean(vv), 2) if vv else None]
         grow.append(round(sum(g for g in grow[5:] if isinstance(g, (int, float))), 1))
         ws.append(grow)
         for c in ws[ws.max_row]:
