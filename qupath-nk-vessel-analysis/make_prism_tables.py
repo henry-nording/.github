@@ -210,60 +210,75 @@ def main(measdir, out):
                 g[d["cond"]].append(d[col])
         block(sheet, ["OP", "N"], g, f"{label} pro mm² Gewebe, IB4. Mann-Whitney.")
 
-    # A15/A16 Zonenprofil: % NK je Abstandszone (Zonen als Zeilen) -> Prism Grouped
-    zones = [("0-5µm", "pct_zone_0_5um"), ("5-10µm", "pct_zone_5_10um"),
-             ("10-20µm", "pct_zone_10_20um"), (">20µm", "pct_zone_over20um")]
-    zones = [(lbl, col) for lbl, col in zones if any(col in r for r in recs)]
+    # A15/A16 Zonenprofil: n (absolut) und % NK je Abstandszone -> Prism Grouped
+    zone_pairs_prism = [
+        ("0-5µm",   "NK_count_zone_0_5um",    "pct_zone_0_5um"),
+        ("5-10µm",  "NK_count_zone_5_10um",   "pct_zone_5_10um"),
+        ("10-20µm", "NK_count_zone_10_20um",  "pct_zone_10_20um"),
+        (">20µm",   "NK_count_zone_over20um", "pct_zone_over20um"),
+    ]
+    zone_pairs_prism = [(lbl, nc, pc) for lbl, nc, pc in zone_pairs_prism
+                        if any(pc in r for r in recs)]
+    # Für Rückwärtskompatibilität mit alten Exports (nur pct, kein count)
+    zones = [(lbl, pc) for lbl, nc, pc in zone_pairs_prism]
 
-    def zone_grouped(title, op_cols, n_cols, getval, note):
-        # op_cols/n_cols: Listen von Schlüsseln (Bilder bzw. Tiere) je Bedingung
+    def zone_grouped(title, op_keys, n_keys, getval_n, getval_p, note):
         ws = wb.create_sheet(title); ws.cell(1, 1, note).font = HB
-        kmax = max(len(op_cols), len(n_cols), 1)
-        ws.cell(3, 1, "Zone (Abstand vom Gefäß)").font = HB; ws.cell(3, 1).fill = GREY
+        kmax = max(len(op_keys), len(n_keys), 1)
+        # Kopfzeile: n-OP ... n-N ... %-OP ... %-N
+        ws.cell(3, 1, "Zone").font = HB; ws.cell(3, 1).fill = GREY
+        base_n_op = 2; base_n_n = 2 + kmax
+        base_p_op = 2 + 2*kmax; base_p_n = 2 + 3*kmax
         for j in range(kmax):
-            ws.cell(3, 2 + j, "OP").font = HB;       ws.cell(3, 2 + j).fill = GREY
-            ws.cell(3, 2 + kmax + j, "N").font = HB; ws.cell(3, 2 + kmax + j).fill = GREY
-        for i, (zlbl, zcol) in enumerate(zones):
+            for base, lbl in [(base_n_op,"n OP"),(base_n_n,"n N"),(base_p_op,"% OP"),(base_p_n,"% N")]:
+                c = ws.cell(3, base + j, lbl); c.font = HB; c.fill = GREY
+        for i, (zlbl, nc, pc) in enumerate(zone_pairs_prism):
             r = 4 + i
             ws.cell(r, 1, zlbl).font = HB
-            for j, key in enumerate(op_cols):
-                v = getval(key, "OP", zcol)
-                if v is not None: ws.cell(r, 2 + j, round(v, 2))
-            for j, key in enumerate(n_cols):
-                v = getval(key, "N", zcol)
-                if v is not None: ws.cell(r, 2 + kmax + j, round(v, 2))
+            for j, key in enumerate(op_keys):
+                nv = getval_n(key, "OP", nc); pv = getval_p(key, "OP", pc)
+                if nv is not None: ws.cell(r, base_n_op + j, round(nv, 1))
+                if pv is not None: ws.cell(r, base_p_op + j, round(pv, 2))
+            for j, key in enumerate(n_keys):
+                nv = getval_n(key, "N", nc); pv = getval_p(key, "N", pc)
+                if nv is not None: ws.cell(r, base_n_n + j, round(nv, 1))
+                if pv is not None: ws.cell(r, base_p_n + j, round(pv, 2))
         ws.column_dimensions['A'].width = 22
 
-    if zones:
-        # A15: je IB4-Bild eine Replikat-Spalte
+    if zone_pairs_prism:
+        # A15: je IB4-Bild
         op_imgs = [d["image"] for d in recs if d["panel"] == "IB4" and d["cond"] == "OP"]
         n_imgs  = [d["image"] for d in recs if d["panel"] == "IB4" and d["cond"] == "N"]
-        by_img = {(d["image"]): d for d in recs if d["panel"] == "IB4"}
-        def gv_img(img, cond, zcol):
-            d = by_img.get(img); v = d.get(zcol) if d else None
-            return float(v) if isinstance(v, float) else None
-        zone_grouped("A15_ZoneProfile_perImage", op_imgs, n_imgs, gv_img,
-                     "% NK je Abstandszone, Zonen als Zeilen. Replikat = IB4-Bild. Prism: Grouped (Verteilungsprofil).")
+        by_img  = {d["image"]: d for d in recs if d["panel"] == "IB4"}
+        def gv_img_n(img, cond, col):
+            d = by_img.get(img); v = d.get(col) if d else None
+            return float(v) if v is not None and not isinstance(v, str) else None
+        zone_grouped("A15_ZoneProfile_perImage", op_imgs, n_imgs, gv_img_n, gv_img_n,
+                     "NK je Zone: n (absolut) und % je IB4-Bild. Replikat = Bild. Prism: Grouped.")
 
-        # A16: Tier-Mittel je Bedingung (richtiges biologisches Replikat, n=2)
+        # A16: Tier-Mittel
         animals = sorted({d["animal"] for d in recs if d["panel"] == "IB4"})
         amean = defaultdict(list)
         for d in recs:
             if d["panel"] != "IB4": continue
-            for _, zcol in zones:
-                if isinstance(d.get(zcol), float):
-                    amean[(d["animal"], d["cond"], zcol)].append(d[zcol])
-        def gv_animal(animal, cond, zcol):
-            vv = amean.get((animal, cond, zcol))
-            return mean(vv) if vv else None
-        zone_grouped("A16_ZoneProfile_perAnimal", animals, animals, gv_animal,
-                     "% NK je Abstandszone, Zonen als Zeilen. Replikat = TIER (n=2). Prism: Grouped (Verteilungsprofil).")
+            for _, nc, pc in zone_pairs_prism:
+                for col in (nc, pc):
+                    v = d.get(col)
+                    if v is not None and not isinstance(v, str):
+                        amean[(d["animal"], d["cond"], col)].append(float(v))
+        def gv_animal(animal, cond, col):
+            vv = amean.get((animal, cond, col)); return mean(vv) if vv else None
+        zone_grouped("A16_ZoneProfile_perAnimal", animals, animals, gv_animal, gv_animal,
+                     "NK je Zone: n und % Tier-Mittel (n=2, biolog. Replikat). Prism: Grouped.")
 
     # AnimalLevel means
     metrics = ["NK_density_per_mm2",
                "small_vessel_density_per_mm2", "large_vessel_density_per_mm2",
                "perivascular_pct",
-               "pct_zone_0_5um", "pct_zone_5_10um", "pct_zone_10_20um", "pct_zone_over20um",
+               "NK_count_zone_0_5um",   "pct_zone_0_5um",
+               "NK_count_zone_5_10um",  "pct_zone_5_10um",
+               "NK_count_zone_10_20um", "pct_zone_10_20um",
+               "NK_count_zone_over20um","pct_zone_over20um",
                "mean_dist_small_um", "mean_dist_large_um",
                "mean_dist_syn_um", "nonNK_perivascular_pct", "nonNK_mean_dist_syn_um"]
     metrics = [m for m in metrics if m in sum_h]
