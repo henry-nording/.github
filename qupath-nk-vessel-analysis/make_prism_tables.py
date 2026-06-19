@@ -77,6 +77,9 @@ def main(measdir, out):
         ("", None),
         ("A13_SmallVesselDensity : small vessels/mm², OP vs N       -> Mann-Whitney", None),
         ("A14_LargeVesselDensity : large vessels/mm², OP vs N       -> Mann-Whitney", None),
+        ("", None),
+        ("A15_ZoneProfile_perImage : % NK je Zone, Zonen als Zeilen, OP/N -> Grouped (Verteilung)", HB),
+        ("A16_ZoneProfile_perAnimal: % NK je Zone, Tier-Mittel (n=2)       -> Grouped (Verteilung)", HB),
     ], 1):
         c = ws0.cell(i, 1, t)
         if fnt: c.font = fnt
@@ -206,6 +209,55 @@ def main(measdir, out):
             if d["panel"] == "IB4" and isinstance(d.get(col), float):
                 g[d["cond"]].append(d[col])
         block(sheet, ["OP", "N"], g, f"{label} pro mm² Gewebe, IB4. Mann-Whitney.")
+
+    # A15/A16 Zonenprofil: % NK je Abstandszone (Zonen als Zeilen) -> Prism Grouped
+    zones = [("0-5µm", "pct_zone_0_5um"), ("5-10µm", "pct_zone_5_10um"),
+             ("10-20µm", "pct_zone_10_20um"), (">20µm", "pct_zone_over20um")]
+    zones = [(lbl, col) for lbl, col in zones if any(col in r for r in recs)]
+
+    def zone_grouped(title, op_cols, n_cols, getval, note):
+        # op_cols/n_cols: Listen von Schlüsseln (Bilder bzw. Tiere) je Bedingung
+        ws = wb.create_sheet(title); ws.cell(1, 1, note).font = HB
+        kmax = max(len(op_cols), len(n_cols), 1)
+        ws.cell(3, 1, "Zone (Abstand vom Gefäß)").font = HB; ws.cell(3, 1).fill = GREY
+        for j in range(kmax):
+            ws.cell(3, 2 + j, "OP").font = HB;       ws.cell(3, 2 + j).fill = GREY
+            ws.cell(3, 2 + kmax + j, "N").font = HB; ws.cell(3, 2 + kmax + j).fill = GREY
+        for i, (zlbl, zcol) in enumerate(zones):
+            r = 4 + i
+            ws.cell(r, 1, zlbl).font = HB
+            for j, key in enumerate(op_cols):
+                v = getval(key, "OP", zcol)
+                if v is not None: ws.cell(r, 2 + j, round(v, 2))
+            for j, key in enumerate(n_cols):
+                v = getval(key, "N", zcol)
+                if v is not None: ws.cell(r, 2 + kmax + j, round(v, 2))
+        ws.column_dimensions['A'].width = 22
+
+    if zones:
+        # A15: je IB4-Bild eine Replikat-Spalte
+        op_imgs = [d["image"] for d in recs if d["panel"] == "IB4" and d["cond"] == "OP"]
+        n_imgs  = [d["image"] for d in recs if d["panel"] == "IB4" and d["cond"] == "N"]
+        by_img = {(d["image"]): d for d in recs if d["panel"] == "IB4"}
+        def gv_img(img, cond, zcol):
+            d = by_img.get(img); v = d.get(zcol) if d else None
+            return float(v) if isinstance(v, float) else None
+        zone_grouped("A15_ZoneProfile_perImage", op_imgs, n_imgs, gv_img,
+                     "% NK je Abstandszone, Zonen als Zeilen. Replikat = IB4-Bild. Prism: Grouped (Verteilungsprofil).")
+
+        # A16: Tier-Mittel je Bedingung (richtiges biologisches Replikat, n=2)
+        animals = sorted({d["animal"] for d in recs if d["panel"] == "IB4"})
+        amean = defaultdict(list)
+        for d in recs:
+            if d["panel"] != "IB4": continue
+            for _, zcol in zones:
+                if isinstance(d.get(zcol), float):
+                    amean[(d["animal"], d["cond"], zcol)].append(d[zcol])
+        def gv_animal(animal, cond, zcol):
+            vv = amean.get((animal, cond, zcol))
+            return mean(vv) if vv else None
+        zone_grouped("A16_ZoneProfile_perAnimal", animals, animals, gv_animal,
+                     "% NK je Abstandszone, Zonen als Zeilen. Replikat = TIER (n=2). Prism: Grouped (Verteilungsprofil).")
 
     # AnimalLevel means
     metrics = ["NK_density_per_mm2",

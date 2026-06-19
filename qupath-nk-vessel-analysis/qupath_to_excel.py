@@ -128,7 +128,37 @@ def build(measdir, out):
         c.font = HB
     ws.freeze_panes = "A2"
 
-    # ----- Pivot_NKcells (Mittelwerte je Bild) -----
+    # ----- Pivot_zones (Zonenprofil je Bild: % NK-Zellen je Abstandszone) -----
+    zone_cols = [("pct_zone_0_5um", "% 0-5µm"), ("pct_zone_5_10um", "% 5-10µm"),
+                 ("pct_zone_10_20um", "% 10-20µm"), ("pct_zone_over20um", "% >20µm")]
+    zone_cols = [(src, lbl) for src, lbl in zone_cols if src in sum_h]
+    if zone_cols:
+        ws = wb.create_sheet("Pivot_zones")
+        ws.append([img_c, "animal", "cond", "panel", "n_NK"] + [lbl for _, lbl in zone_cols] + ["Summe %"])
+        for c in ws[1]:
+            c.font = HB; c.fill = GREY
+        ztot = defaultdict(list); ncnt = []
+        for r in summ:
+            f = parse_factors(r[img_c])
+            if f["is_control"]:
+                continue
+            vals = [r.get(src) for src, _ in zone_cols]
+            ssum = round(sum(v for v in vals if isinstance(v, float)), 1)
+            ws.append([r[img_c], f["animal"], f["cond"], f["panel"], r.get("NK_count")]
+                      + [round(v, 2) if isinstance(v, float) else None for v in vals] + [ssum])
+            for (src, _), v in zip(zone_cols, vals):
+                if isinstance(v, float):
+                    ztot[src].append(v)
+        grow = ["Mittel über Bilder", "", "", "", ""]
+        for src, _ in zone_cols:
+            vv = ztot.get(src, [])
+            grow.append(round(mean(vv), 2) if vv else None)
+        grow.append(round(sum(g for g in grow[5:] if isinstance(g, (int, float))), 1))
+        ws.append(grow)
+        for c in ws[ws.max_row]:
+            c.font = HB
+        ws.freeze_panes = "A2"
+
     img_d = det_h[0]
     pick = [
         ("Cell: Area", col_for(det_h, "Cell: Area") and "Cell: Area"),
