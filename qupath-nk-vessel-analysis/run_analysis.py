@@ -35,11 +35,47 @@ except ImportError as e:
     sys.exit(1)
 
 
+def find_export(measdir, stem):
+    """Sucht eine QuPath-Exportdatei (TSV/CSV) im Ordner."""
+    import glob
+    for ext in (".tsv", ".csv"):
+        p = os.path.join(measdir, stem + ext)
+        if os.path.exists(p):
+            return p
+    hits = glob.glob(os.path.join(measdir, stem + "*"))
+    return hits[0] if hits else None
+
+
 def main():
     measdir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else ".")
 
     if not os.path.isdir(measdir):
         print(f"FEHLER: Ordner nicht gefunden: {measdir}")
+        sys.exit(1)
+
+    # --- Vorab-Check: liegen die QuPath-Exporte ueberhaupt in diesem Ordner? ---
+    required = ["SUMMARY_per_image", "ALL_detections_NKcells", "ALL_vessels_annotations"]
+    found = {stem: find_export(measdir, stem) for stem in required}
+    if not found["SUMMARY_per_image"]:
+        print("=" * 60)
+        print("FEHLER: Keine QuPath-Exportdateien in diesem Ordner gefunden!")
+        print(f"  Durchsuchter Ordner: {measdir}")
+        print()
+        print("  Erwartet werden (vom Groovy-Skript erzeugt):")
+        for stem in required:
+            mark = "OK " if found[stem] else "FEHLT"
+            print(f"    [{mark}] {stem}.tsv (oder .csv)")
+        print()
+        print("  Wahrscheinliche Ursache:")
+        print("   - Der angegebene Ordner ist der ROHBILD-Ordner, nicht der")
+        print("     'measurements'-Ordner des QuPath-Projekts.")
+        print("   - ODER measureAndExport.groovy wurde in QuPath noch nicht ausgefuehrt.")
+        print()
+        print("  Loesung: Skript auf den 'measurements'-Ordner zeigen lassen, z.B.:")
+        print("     python run_analysis.py \"...\\QuPath_Analyse_2\\measurements\"")
+        print("   oder einfach OHNE Argument aus dem measurements-Ordner heraus starten:")
+        print("     python run_analysis.py")
+        print("=" * 60)
         sys.exit(1)
 
     today   = datetime.date.today().strftime("%Y-%m-%d")
