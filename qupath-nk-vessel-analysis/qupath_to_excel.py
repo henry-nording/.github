@@ -170,6 +170,58 @@ def build(measdir, out):
             c.font = HB
         ws.freeze_panes = "A2"
 
+    # ----- Pivot_zones_syn (Zonenprofil je Bild: NK-Distanz ZU SYNAPTOPHYSIN) -----
+    # Analog zu Pivot_zones, aber je NK-Zelle aus der Rohdistanz berechnet
+    # (gleiche Zonengrenzen wie im Groovy-Skript: <=5 / <=10 / <=20 / >20 µm).
+    syn_src = "Dist synaptophysin um"
+    if syn_src in det_h:
+        img_dd = det_h[0]
+        def _syn_zone_idx(d):
+            if d <= 5.0:  return 0
+            if d <= 10.0: return 1
+            if d <= 20.0: return 2
+            return 3
+        zlabels = [("n 0-5µm", "% 0-5µm"), ("n 5-10µm", "% 5-10µm"),
+                   ("n 10-20µm", "% 10-20µm"), ("n >20µm", "% >20µm")]
+        zc = defaultdict(lambda: [0, 0, 0, 0])
+        for r in det:
+            v = r.get(syn_src)
+            if isinstance(v, float):
+                zc[r[img_dd]][_syn_zone_idx(v)] += 1
+        if zc:
+            ws = wb.create_sheet("Pivot_zones_syn")
+            hdr = [img_dd, "animal", "cond", "panel", "n_NK"]
+            for nl, pl in zlabels:
+                hdr += [nl, pl]
+            hdr.append("Summe %")
+            ws.append(hdr)
+            for c in ws[1]:
+                c.font = HB; c.fill = GREY
+            ptot = defaultdict(list)
+            for im in sorted(zc):
+                f = parse_factors(im)
+                if f["is_control"]:
+                    continue
+                counts = zc[im]; tot = sum(counts)
+                row = [im, f["animal"], f["cond"], f["panel"], tot]
+                psum = 0.0
+                for k, (nl, pl) in enumerate(zlabels):
+                    pct = (counts[k] * 100.0 / tot) if tot else None
+                    row += [counts[k], round(pct, 2) if pct is not None else None]
+                    if pct is not None:
+                        psum += pct; ptot[k].append(pct)
+                row.append(round(psum, 1))
+                ws.append(row)
+            grow = ["Mittel über Bilder", "", "", "", ""]
+            for k in range(4):
+                vv = ptot.get(k, [])
+                grow += [None, round(mean(vv), 2) if vv else None]
+            grow.append(round(sum(g for g in grow[5:] if isinstance(g, (int, float))), 1))
+            ws.append(grow)
+            for c in ws[ws.max_row]:
+                c.font = HB
+            ws.freeze_panes = "A2"
+
     img_d = det_h[0]
     pick = [
         ("Cell: Area", col_for(det_h, "Cell: Area") and "Cell: Area"),
