@@ -55,6 +55,38 @@ def main(measdir, out):
         if f["ctrl"]: continue
         f.update(r); f["image"] = r["Image"]; recs.append(f)
 
+    # --- Struktur-Flaechen & -Dichte aus den Annotationen (small/large vessel, Synaptophysin) ---
+    # Spalten robust gegen µm-Encoding aufloesen.
+    area_col = next((h for h in ves_h if "area" in h.lower()), None)
+    cls_col  = next((h for h in ves_h if h.strip().lower() == "classification"), None)
+    img_col  = ves_h[0] if ves_h else "Image"
+    struct = defaultdict(lambda: {"tissue_um2": 0.0, "syn": [], "small": [], "large": []})
+    if area_col and cls_col:
+        for r in ves:
+            cls = (r.get(cls_col) or "").strip(); a = r.get(area_col); im = r.get(img_col)
+            if not isinstance(a, float):
+                continue
+            if   cls == "Tissue":        struct[im]["tissue_um2"] += a
+            elif cls == "Synaptophysin": struct[im]["syn"].append(a)
+            elif cls == "small vessel":  struct[im]["small"].append(a)
+            elif cls == "large vessel":  struct[im]["large"].append(a)
+    # je Bild abgeleitete Kennzahlen an die Records anhaengen
+    for d in recs:
+        s = struct.get(d["image"])
+        if not s:
+            continue
+        tmm2 = s["tissue_um2"] / 1e6 if s["tissue_um2"] else None
+        if s["syn"]:
+            d["syn_struct_area_mean"]  = mean(s["syn"])
+            if tmm2:
+                d["syn_struct_density"] = len(s["syn"]) / tmm2
+            if s["tissue_um2"]:
+                d["syn_area_fraction_pct"] = sum(s["syn"]) * 100.0 / s["tissue_um2"]
+        if s["small"]:
+            d["small_vessel_area_mean"] = mean(s["small"])
+        if s["large"]:
+            d["large_vessel_area_mean"] = mean(s["large"])
+
     wb = Workbook(); ws0 = wb.active; ws0.title = "README"
     for i, (t, fnt) in enumerate([
         ("Prism-fertige Tabellen – welches Sheet in welche Prism-Analyse", H1),
@@ -88,6 +120,14 @@ def main(measdir, out):
         ("A20_SynZone_over20um: % NK >20µm zu Synaptophysin, OP vs N  -> Mann-Whitney", None),
         ("A21_SynZoneProfile_perImage : % NK je Syn-Zone, je Bild     -> Grouped (Verteilung)", HB),
         ("A22_SynZoneProfile_perAnimal: % NK je Syn-Zone, Tier-Mittel -> Grouped (Verteilung)", HB),
+        ("", None),
+        ("--- STRUKTUR-DICHTE & -FLAECHE (Synaptophysin / Gefaesse) ---", HB),
+        ("A23_SynStructDensity : Synaptophysin-Strukturen/mm², OP vs N -> Mann-Whitney", None),
+        ("A24_SynStructArea    : Ø Synaptophysin-Flaeche µm², OP vs N  -> Mann-Whitney", None),
+        ("A24b_SynAreaFraction : Synaptophysin-Flaechenanteil %, OP vs N-> Mann-Whitney", None),
+        ("A25_SmallVesselArea  : Ø small-vessel-Flaeche µm², OP vs N   -> Mann-Whitney", None),
+        ("A26_LargeVesselArea  : Ø large-vessel-Flaeche µm², OP vs N   -> Mann-Whitney", None),
+        ("A27_VesselArea_small_vs_large : Ø Flaeche gepaart small/large -> Wilcoxon paired", None),
     ], 1):
         c = ws0.cell(i, 1, t)
         if fnt: c.font = fnt
@@ -358,6 +398,52 @@ def main(measdir, out):
                          "NK je Synaptophysin-Zone: n und % Tier-Mittel (biolog. Replikat). Prism: Grouped.",
                          zpairs=syn_zone_pairs)
 
+    # =====================================================================
+    # A23-A27  STRUKTUR-DICHTE & -FLAECHE (Synaptophysin / small / large vessel)
+    # je Bild aus den Annotationen berechnet, OP vs N. Replikat = Bild.
+    # =====================================================================
+    # A23: Synaptophysin-Dichte (Strukturen pro mm² Gewebe), Syn-Panel
+    g = {"OP": [], "N": []}
+    for d in recs:
+        if d["panel"] == "Syn" and isinstance(d.get("syn_struct_density"), float):
+            g[d["cond"]].append(d["syn_struct_density"])
+    block("A23_SynStructDensity", ["OP", "N"], g,
+          "Synaptophysin-Strukturen pro mm² Gewebe, Syn. Mann-Whitney.")
+
+    # A24: mittlere Synaptophysin-Strukturflaeche [µm²], Syn-Panel
+    g = {"OP": [], "N": []}
+    for d in recs:
+        if d["panel"] == "Syn" and isinstance(d.get("syn_struct_area_mean"), float):
+            g[d["cond"]].append(d["syn_struct_area_mean"])
+    block("A24_SynStructArea", ["OP", "N"], g,
+          "Mittlere Synaptophysin-Strukturflaeche [µm²], Syn. Mann-Whitney.")
+
+    # A24b: Synaptophysin-Flaechenanteil am Gewebe [%], Syn-Panel
+    g = {"OP": [], "N": []}
+    for d in recs:
+        if d["panel"] == "Syn" and isinstance(d.get("syn_area_fraction_pct"), float):
+            g[d["cond"]].append(d["syn_area_fraction_pct"])
+    block("A24b_SynAreaFraction", ["OP", "N"], g,
+          "Synaptophysin-Flaechenanteil am Gewebe [%], Syn. Mann-Whitney.")
+
+    # A25/A26: mittlere Gefaessflaeche [µm²], small bzw. large, IB4-Panel, OP vs N
+    for sheet, key, label in [
+        ("A25_SmallVesselArea", "small_vessel_area_mean", "Small vessels"),
+        ("A26_LargeVesselArea", "large_vessel_area_mean", "Large vessels"),
+    ]:
+        g = {"OP": [], "N": []}
+        for d in recs:
+            if d["panel"] == "IB4" and isinstance(d.get(key), float):
+                g[d["cond"]].append(d[key])
+        block(sheet, ["OP", "N"], g, f"Mittlere {label}-Flaeche [µm²], IB4. Mann-Whitney.")
+
+    # A27: small vs large Gefaessflaeche, gepaart je IB4-Bild
+    paired("A27_VesselArea_small_vs_large", ["Bild", "cond", "small_area_um2", "large_area_um2"],
+           lambda d: ([d["image"][:40], d["cond"], d["small_vessel_area_mean"], d["large_vessel_area_mean"]]
+                      if d["panel"] == "IB4" and isinstance(d.get("small_vessel_area_mean"), float)
+                      and isinstance(d.get("large_vessel_area_mean"), float) else None),
+           "Mittlere Strukturflaeche [µm²], gepaart small vs large je IB4-Bild. Wilcoxon paired.", recs)
+
     # AnimalLevel means
     metrics = ["NK_density_per_mm2",
                "small_vessel_density_per_mm2", "large_vessel_density_per_mm2",
@@ -369,6 +455,11 @@ def main(measdir, out):
                "mean_dist_small_um", "mean_dist_large_um",
                "mean_dist_syn_um", "nonNK_perivascular_pct", "nonNK_mean_dist_syn_um"]
     metrics = [m for m in metrics if m in sum_h]
+    # Struktur-Dichte/-Flaeche (aus Annotationen berechnet, nicht in SUMMARY) ergaenzen
+    struct_metrics = ["syn_struct_density", "syn_struct_area_mean", "syn_area_fraction_pct",
+                      "small_vessel_area_mean", "large_vessel_area_mean"]
+    struct_metrics = [m for m in struct_metrics if any(isinstance(d.get(m), float) for d in recs)]
+    metrics = metrics + struct_metrics
     agg = defaultdict(list)
     for d in recs:
         for m in metrics:

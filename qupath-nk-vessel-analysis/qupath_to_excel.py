@@ -309,6 +309,48 @@ def build(measdir, out):
         ws.append([im, f["animal"], f["cond"], f["panel"], vcnt[im]] + [round(vagg[im][c], 1) for c in vcols])
     ws.freeze_panes = "A2"
 
+    # ----- Pivot_struct_area (je Bild: Dichte & Flaeche der Strukturen) -----
+    # Synaptophysin-Dichte/-Flaeche sowie small/large vessel Flaeche aus den Annotationen.
+    area_col = col_for(ves_h, "Area µm^2", "Area um^2", "Area")
+    cls_col  = next((h for h in ves_h if str(h).strip().lower() == "classification"), None)
+    if area_col and cls_col:
+        st = defaultdict(lambda: {"tissue_um2": 0.0, "syn": [], "small": [], "large": []})
+        for r in ves:
+            cls = str(r.get(cls_col) or "").strip(); a = r.get(area_col); im = r[img_v]
+            if not isinstance(a, float):
+                continue
+            if   cls == "Tissue":        st[im]["tissue_um2"] += a
+            elif cls == "Synaptophysin": st[im]["syn"].append(a)
+            elif cls == "small vessel":  st[im]["small"].append(a)
+            elif cls == "large vessel":  st[im]["large"].append(a)
+        ws = wb.create_sheet("Pivot_struct_area")
+        ws.append([img_v, "animal", "cond", "panel",
+                   "tissue_area_mm2",
+                   "n_synaptophysin", "syn_density_per_mm2", "syn_area_mean_um2", "syn_area_fraction_pct",
+                   "n_small_vessel", "small_vessel_area_mean_um2",
+                   "n_large_vessel", "large_vessel_area_mean_um2"])
+        for c in ws[1]:
+            c.font = HB; c.fill = GREY
+        for im in sorted(st):
+            f = parse_factors(im)
+            if f["is_control"]:
+                continue
+            s = st[im]; tmm2 = s["tissue_um2"] / 1e6 if s["tissue_um2"] else None
+            syn, sm, lg = s["syn"], s["small"], s["large"]
+            ws.append([
+                im, f["animal"], f["cond"], f["panel"],
+                round(tmm2, 4) if tmm2 else None,
+                len(syn),
+                round(len(syn) / tmm2, 2) if (syn and tmm2) else None,
+                round(mean(syn), 2) if syn else None,
+                round(sum(syn) * 100.0 / s["tissue_um2"], 4) if (syn and s["tissue_um2"]) else None,
+                len(sm),
+                round(mean(sm), 2) if sm else None,
+                len(lg),
+                round(mean(lg), 2) if lg else None,
+            ])
+        ws.freeze_panes = "A2"
+
     # ----- PerAnimal_condition -----
     metrics = [c for c in ["NK_density_per_mm2",
                            "small_vessel_density_per_mm2", "large_vessel_density_per_mm2", "vessel_density_per_mm2",
