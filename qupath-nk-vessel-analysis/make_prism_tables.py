@@ -80,6 +80,14 @@ def main(measdir, out):
         ("", None),
         ("A15_ZoneProfile_perImage : % NK je Zone, Zonen als Zeilen, OP/N -> Grouped (Verteilung)", HB),
         ("A16_ZoneProfile_perAnimal: % NK je Zone, Tier-Mittel (n=2)       -> Grouped (Verteilung)", HB),
+        ("", None),
+        ("--- SYNAPTOPHYSIN-DISTANZZONEN (NK -> Synaptophysin) ---", HB),
+        ("A17_SynZone_0_5um   : % NK ≤5µm zu Synaptophysin, OP vs N  -> Mann-Whitney", None),
+        ("A18_SynZone_5_10um  : % NK 5-10µm zu Synaptophysin, OP vs N -> Mann-Whitney", None),
+        ("A19_SynZone_10_20um : % NK 10-20µm zu Synaptophysin, OP vs N-> Mann-Whitney", None),
+        ("A20_SynZone_over20um: % NK >20µm zu Synaptophysin, OP vs N  -> Mann-Whitney", None),
+        ("A21_SynZoneProfile_perImage : % NK je Syn-Zone, je Bild     -> Grouped (Verteilung)", HB),
+        ("A22_SynZoneProfile_perAnimal: % NK je Syn-Zone, Tier-Mittel -> Grouped (Verteilung)", HB),
     ], 1):
         c = ws0.cell(i, 1, t)
         if fnt: c.font = fnt
@@ -222,7 +230,8 @@ def main(measdir, out):
     # Für Rückwärtskompatibilität mit alten Exports (nur pct, kein count)
     zones = [(lbl, pc) for lbl, nc, pc in zone_pairs_prism]
 
-    def zone_grouped(title, op_keys, n_keys, getval_n, getval_p, note):
+    def zone_grouped(title, op_keys, n_keys, getval_n, getval_p, note, zpairs=None):
+        zp = zpairs if zpairs is not None else zone_pairs_prism
         ws = wb.create_sheet(title); ws.cell(1, 1, note).font = HB
         kmax = max(len(op_keys), len(n_keys), 1)
         # Kopfzeile: n-OP ... n-N ... %-OP ... %-N
@@ -232,7 +241,7 @@ def main(measdir, out):
         for j in range(kmax):
             for base, lbl in [(base_n_op,"n OP"),(base_n_n,"n N"),(base_p_op,"% OP"),(base_p_n,"% N")]:
                 c = ws.cell(3, base + j, lbl); c.font = HB; c.fill = GREY
-        for i, (zlbl, nc, pc) in enumerate(zone_pairs_prism):
+        for i, (zlbl, nc, pc) in enumerate(zp):
             r = 4 + i
             ws.cell(r, 1, zlbl).font = HB
             for j, key in enumerate(op_keys):
@@ -270,6 +279,84 @@ def main(measdir, out):
             vv = amean.get((animal, cond, col)); return mean(vv) if vv else None
         zone_grouped("A16_ZoneProfile_perAnimal", animals, animals, gv_animal, gv_animal,
                      "NK je Zone: n und % Tier-Mittel (n=2, biolog. Replikat). Prism: Grouped.")
+
+    # =====================================================================
+    # A17-A22  SYNAPTOPHYSIN-DISTANZZONEN (NK-Zelle -> naechste Synaptophysin-
+    # Annotation). Pro NK-Zelle aus der Rohdistanz 'Dist synaptophysin um'
+    # berechnet, gleiche Zonengrenzen wie bei den Gefaessen (<=5 / <=10 / <=20 / >20).
+    # Panel = Syn (nur Synaptophysin-gefaerbte Schnitte).
+    # =====================================================================
+    syn_src = "Dist synaptophysin um"
+    if syn_src in det_h:
+        def _syn_idx(d):
+            if d <= 5.0:  return 0
+            if d <= 10.0: return 1
+            if d <= 20.0: return 2
+            return 3
+        syn_cnt = defaultdict(lambda: [0, 0, 0, 0])
+        for r in det:
+            v = r.get(syn_src)
+            if isinstance(v, float):
+                syn_cnt[r["Image"]][_syn_idx(v)] += 1
+        # n und % je Zone an die (Syn-)Bild-Records anhaengen
+        for d in recs:
+            c = syn_cnt.get(d["image"])
+            if not c:
+                continue
+            tot = sum(c)
+            for k in range(4):
+                d[f"syn_count_zone_{k}"] = c[k]
+                d[f"syn_pct_zone_{k}"]   = (c[k] * 100.0 / tot) if tot else None
+
+        # A17-A20: % NK je Syn-Zone, OP vs N (Mann-Whitney)
+        for sheet, k, label in [
+            ("A17_SynZone_0_5um",    0, "≤5µm"),
+            ("A18_SynZone_5_10um",   1, "5–10µm"),
+            ("A19_SynZone_10_20um",  2, "10–20µm"),
+            ("A20_SynZone_over20um", 3, ">20µm"),
+        ]:
+            col = f"syn_pct_zone_{k}"
+            g = {"OP": [], "N": []}
+            for d in recs:
+                if d["panel"] == "Syn" and isinstance(d.get(col), float):
+                    g[d["cond"]].append(d[col])
+            block(sheet, ["OP", "N"], g,
+                  f"% NK im Abstand {label} zur naechsten Synaptophysin-Annotation, Syn. Mann-Whitney.")
+
+        # A21/A22: Zonenprofil (n + %) je Syn-Bild bzw. Tier-Mittel -> Prism Grouped
+        syn_zone_pairs = [
+            ("0-5µm",   "syn_count_zone_0", "syn_pct_zone_0"),
+            ("5-10µm",  "syn_count_zone_1", "syn_pct_zone_1"),
+            ("10-20µm", "syn_count_zone_2", "syn_pct_zone_2"),
+            (">20µm",   "syn_count_zone_3", "syn_pct_zone_3"),
+        ]
+        syn_recs = [d for d in recs if d["panel"] == "Syn" and "syn_count_zone_0" in d]
+        if syn_recs:
+            # A21: je Syn-Bild
+            op_imgs_s = [d["image"] for d in syn_recs if d["cond"] == "OP"]
+            n_imgs_s  = [d["image"] for d in syn_recs if d["cond"] == "N"]
+            by_img_s  = {d["image"]: d for d in syn_recs}
+            def gv_simg(img, cond, col):
+                d = by_img_s.get(img); v = d.get(col) if d else None
+                return float(v) if v is not None and not isinstance(v, str) else None
+            zone_grouped("A21_SynZoneProfile_perImage", op_imgs_s, n_imgs_s, gv_simg, gv_simg,
+                         "NK je Synaptophysin-Zone: n (absolut) und % je Syn-Bild. Replikat = Bild. Prism: Grouped.",
+                         zpairs=syn_zone_pairs)
+
+            # A22: Tier-Mittel
+            animals_s = sorted({d["animal"] for d in syn_recs})
+            amean_s = defaultdict(list)
+            for d in syn_recs:
+                for _, nc, pc in syn_zone_pairs:
+                    for col in (nc, pc):
+                        v = d.get(col)
+                        if v is not None and not isinstance(v, str):
+                            amean_s[(d["animal"], d["cond"], col)].append(float(v))
+            def gv_sanimal(animal, cond, col):
+                vv = amean_s.get((animal, cond, col)); return mean(vv) if vv else None
+            zone_grouped("A22_SynZoneProfile_perAnimal", animals_s, animals_s, gv_sanimal, gv_sanimal,
+                         "NK je Synaptophysin-Zone: n und % Tier-Mittel (biolog. Replikat). Prism: Grouped.",
+                         zpairs=syn_zone_pairs)
 
     # AnimalLevel means
     metrics = ["NK_density_per_mm2",
