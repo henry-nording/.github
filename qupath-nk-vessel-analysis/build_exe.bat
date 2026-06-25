@@ -31,11 +31,10 @@ if errorlevel 1 (
 
 echo.
 echo === Baue .exe ===
-pyinstaller ^
+python -m PyInstaller ^
     --onefile ^
     --windowed ^
     --name "QuPath_NK_Analysis" ^
-    --icon NONE ^
     qupath_launcher.py
 
 if errorlevel 1 (
