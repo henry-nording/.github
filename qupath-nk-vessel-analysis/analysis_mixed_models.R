@@ -41,6 +41,52 @@ s$is_control <- grepl("control", tolower(img))
 s <- s[!s$is_control, ]
 s$animal <- factor(s$animal); s$cond <- factor(s$cond, levels = c("N", "OP")); s$panel <- factor(s$panel)
 
+# ---- Struktur-Dichte & -Flaeche aus den Annotationen (small/large vessel, Synaptophysin) ----
+# Wird je Bild aus ALL_vessels_annotations berechnet und in s gemergt:
+#   syn_struct_density    = Synaptophysin-Strukturen / mm² Gewebe
+#   syn_struct_area_mean  = mittlere Synaptophysin-Flaeche [µm²]
+#   syn_area_fraction_pct = Synaptophysin-Flaechenanteil am Gewebe [%]
+#   small/large_vessel_area_mean = mittlere Gefaessflaeche [µm²]
+va_raw <- tryCatch(read_qupath("ALL_vessels_annotations"), error = function(e) NULL)
+if (!is.null(va_raw)) {
+  area_col <- grep("area", names(va_raw), ignore.case = TRUE, value = TRUE)[1]
+  cls_col  <- names(va_raw)[tolower(trimws(names(va_raw))) == "classification"][1]
+  img_col  <- names(va_raw)[1]
+  if (!is.na(area_col) && !is.null(cls_col) && !is.na(cls_col)) {
+    area <- suppressWarnings(as.numeric(gsub(",", ".", va_raw[[area_col]])))
+    cls  <- trimws(as.character(va_raw[[cls_col]]))
+    img  <- as.character(va_raw[[img_col]])
+    ok   <- !is.na(area)
+    agg_by <- function(mask, fun) {
+      m <- ok & mask
+      if (!any(m)) return(setNames(numeric(0), character(0)))
+      tapply(area[m], img[m], fun)
+    }
+    tissue   <- agg_by(cls == "Tissue", sum)            # µm² je Bild
+    syn_n    <- agg_by(cls == "Synaptophysin", length)
+    syn_mean <- agg_by(cls == "Synaptophysin", mean)
+    syn_sum  <- agg_by(cls == "Synaptophysin", sum)
+    sm_mean  <- agg_by(cls == "small vessel", mean)
+    lg_mean  <- agg_by(cls == "large vessel", mean)
+    imgs <- unique(img)
+    gv   <- function(v, nm) as.numeric(v[nm])
+    tum2 <- gv(tissue, imgs)
+    st <- data.frame(
+      Image                  = imgs,
+      syn_struct_density     = gv(syn_n, imgs) / (tum2 / 1e6),
+      syn_struct_area_mean   = gv(syn_mean, imgs),
+      syn_area_fraction_pct  = gv(syn_sum, imgs) * 100 / tum2,
+      small_vessel_area_mean = gv(sm_mean, imgs),
+      large_vessel_area_mean = gv(lg_mean, imgs),
+      stringsAsFactors = FALSE, check.names = FALSE
+    )
+    s <- merge(s, st, by = "Image", all.x = TRUE, sort = FALSE)
+    cat("\n[Struktur-Metriken aus ALL_vessels_annotations gemergt.]\n")
+  }
+} else {
+  cat("\n[ALL_vessels_annotations nicht gefunden -> Struktur-Dichte/-Flaeche uebersprungen.]\n")
+}
+
 cat("\n=== Bilder pro Tier x Bedingung x Panel ===\n")
 print(table(s$animal, s$cond, s$panel))
 
@@ -58,6 +104,13 @@ agg_animal <- function(var, panel = NULL) {
 cat("\n=== (A) Tier-Mittel: NK-Dichte (IB4) ===\n");        print(agg_animal("NK_density_per_mm2", "IB4"))
 cat("\n=== (A) Tier-Mittel: perivaskulärer Anteil % (IB4) ===\n"); print(agg_animal("perivascular_pct", "IB4"))
 cat("\n=== (A) Tier-Mittel: Distanz NK->Synaptophysin (Syn) ===\n"); print(agg_animal("mean_dist_syn_um", "Syn"))
+if ("syn_struct_density" %in% names(s)) {
+  cat("\n=== (A) Tier-Mittel: Synaptophysin-Dichte /mm² (Syn) ===\n");       print(agg_animal("syn_struct_density", "Syn"))
+  cat("\n=== (A) Tier-Mittel: Synaptophysin-Flaeche µm² (Syn) ===\n");       print(agg_animal("syn_struct_area_mean", "Syn"))
+  cat("\n=== (A) Tier-Mittel: Synaptophysin-Flaechenanteil % (Syn) ===\n");  print(agg_animal("syn_area_fraction_pct", "Syn"))
+  cat("\n=== (A) Tier-Mittel: small-vessel-Flaeche µm² (IB4) ===\n");        print(agg_animal("small_vessel_area_mean", "IB4"))
+  cat("\n=== (A) Tier-Mittel: large-vessel-Flaeche µm² (IB4) ===\n");        print(agg_animal("large_vessel_area_mean", "IB4"))
+}
 
 # ----------------------------------------------------------------------------
 # (B) Gemischte Modelle (Bild in Tier genestet)  – Vorlage für ausreichendes n
@@ -80,6 +133,13 @@ if ("small_vessel_density_per_mm2" %in% names(s))
 if ("large_vessel_density_per_mm2" %in% names(s))
   fit_mixed("large_vessel_density_per_mm2", "IB4", "Large-vessel-Dichte OP vs N")
 fit_mixed("mean_dist_syn_um",   "Syn", "Distanz zu Synaptophysin OP vs N")
+if ("syn_struct_density" %in% names(s)) {
+  fit_mixed("syn_struct_density",     "Syn", "Synaptophysin-Dichte OP vs N")
+  fit_mixed("syn_struct_area_mean",   "Syn", "Synaptophysin-Flaeche OP vs N")
+  fit_mixed("syn_area_fraction_pct",  "Syn", "Synaptophysin-Flaechenanteil OP vs N")
+  fit_mixed("small_vessel_area_mean", "IB4", "Small-vessel-Flaeche OP vs N")
+  fit_mixed("large_vessel_area_mean", "IB4", "Large-vessel-Flaeche OP vs N")
+}
 
 # ----------------------------------------------------------------------------
 # (C) Anreicherung: NK vs. Nicht-NK (Hintergrund)  – braucht nonNK_*-Spalten
@@ -133,6 +193,22 @@ if (requireNamespace("ggplot2", quietly = TRUE)) {
           geom_boxplot(outlier.shape = NA) +
           geom_jitter(aes(color = animal), width = 0.15, size = 2) +
           labs(title = "Distanz NK->Synaptophysin OP vs N", y = "mittlere Distanz [µm]", x = NULL) + theme_bw())
+  # Struktur-Dichte & -Flaeche
+  pbox <- function(df, yvar, title, ylab) {
+    df <- df[!is.na(df[[yvar]]), ]
+    if (nrow(df) == 0) return(invisible())
+    print(ggplot(df, aes(cond, .data[[yvar]])) +
+            geom_boxplot(outlier.shape = NA) +
+            geom_jitter(aes(color = animal), width = 0.15, size = 2) +
+            labs(title = title, y = ylab, x = NULL) + theme_bw())
+  }
+  if ("syn_struct_density" %in% names(s)) {
+    pbox(syn, "syn_struct_density",     "Synaptophysin-Dichte OP vs N",        "Strukturen / mm²")
+    pbox(syn, "syn_struct_area_mean",   "Synaptophysin-Flaeche OP vs N",        "mittlere Flaeche [µm²]")
+    pbox(syn, "syn_area_fraction_pct",  "Synaptophysin-Flaechenanteil OP vs N", "% Gewebeflaeche")
+    pbox(ib4, "small_vessel_area_mean", "Small-vessel-Flaeche OP vs N",         "mittlere Flaeche [µm²]")
+    pbox(ib4, "large_vessel_area_mean", "Large-vessel-Flaeche OP vs N",         "mittlere Flaeche [µm²]")
+  }
   dev.off()
   cat("\nPlots gespeichert: analysis_plots.pdf\n")
 } else {
