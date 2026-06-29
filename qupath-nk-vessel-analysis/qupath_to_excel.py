@@ -111,8 +111,10 @@ def build(measdir, out):
     struct_img = {}
     # struct_raw[image] -> Rohdaten für Pivot_struct_area (Counts + Listen)
     struct_raw = {}
-    STRUCT_COLS = ["syn_density_per_mm2", "syn_area_mean_um2", "syn_area_fraction_pct",
-                   "small_vessel_area_mean_um2", "large_vessel_area_mean_um2"]
+    STRUCT_COLS = ["syn_density_per_mm2",
+                   "syn_area_total_um2", "syn_area_mean_um2", "syn_area_fraction_pct",
+                   "small_vessel_area_total_um2", "small_vessel_area_mean_um2",
+                   "large_vessel_area_total_um2", "large_vessel_area_mean_um2"]
     if area_col and cls_col and img_v:
         _raw = defaultdict(lambda: {"tissue_um2": 0.0, "syn": [], "small": [], "large": []})
         for r in ves:
@@ -128,11 +130,14 @@ def build(measdir, out):
         for _i, _s in _raw.items():
             _t = _s["tissue_um2"] / 1e6 if _s["tissue_um2"] else None
             struct_img[_i] = {
-                "syn_density_per_mm2":       round(len(_s["syn"]) / _t, 2)           if (_s["syn"] and _t)           else None,
-                "syn_area_mean_um2":          round(mean(_s["syn"]), 2)               if _s["syn"]                    else None,
-                "syn_area_fraction_pct":      round(sum(_s["syn"]) * 100.0 / _s["tissue_um2"], 4) if (_s["syn"] and _s["tissue_um2"]) else None,
-                "small_vessel_area_mean_um2": round(mean(_s["small"]), 2)             if _s["small"]                  else None,
-                "large_vessel_area_mean_um2": round(mean(_s["large"]), 2)             if _s["large"]                  else None,
+                "syn_density_per_mm2":        round(len(_s["syn"]) / _t, 2)                       if (_s["syn"] and _t)           else None,
+                "syn_area_total_um2":          round(sum(_s["syn"]), 2)                            if _s["syn"]                    else None,
+                "syn_area_mean_um2":           round(mean(_s["syn"]), 2)                           if _s["syn"]                    else None,
+                "syn_area_fraction_pct":       round(sum(_s["syn"]) * 100.0 / _s["tissue_um2"], 4) if (_s["syn"] and _s["tissue_um2"]) else None,
+                "small_vessel_area_total_um2": round(sum(_s["small"]), 2)                          if _s["small"]                  else None,
+                "small_vessel_area_mean_um2":  round(mean(_s["small"]), 2)                         if _s["small"]                  else None,
+                "large_vessel_area_total_um2": round(sum(_s["large"]), 2)                          if _s["large"]                  else None,
+                "large_vessel_area_mean_um2":  round(mean(_s["large"]), 2)                         if _s["large"]                  else None,
             }
             struct_raw[_i] = _s   # für Pivot_struct_area
 
@@ -359,9 +364,10 @@ def build(measdir, out):
         ws = wb.create_sheet("Pivot_struct_area")
         ws.append([img_v, "animal", "cond", "panel",
                    "tissue_area_mm2",
-                   "n_synaptophysin", "syn_density_per_mm2", "syn_area_mean_um2", "syn_area_fraction_pct",
-                   "n_small_vessel", "small_vessel_area_mean_um2",
-                   "n_large_vessel", "large_vessel_area_mean_um2"])
+                   "n_synaptophysin", "syn_density_per_mm2",
+                   "syn_area_total_um2", "syn_area_mean_um2", "syn_area_fraction_pct",
+                   "n_small_vessel", "small_vessel_area_total_um2", "small_vessel_area_mean_um2",
+                   "n_large_vessel", "large_vessel_area_total_um2", "large_vessel_area_mean_um2"])
         for c in ws[1]:
             c.font = HB; c.fill = GREY
         for im in sorted(struct_raw):
@@ -375,11 +381,14 @@ def build(measdir, out):
                 round(tmm2, 4) if tmm2 else None,
                 len(syn),
                 round(len(syn) / tmm2, 2) if (syn and tmm2) else None,
+                round(sum(syn), 2) if syn else None,
                 round(mean(syn), 2) if syn else None,
                 round(sum(syn) * 100.0 / s["tissue_um2"], 4) if (syn and s["tissue_um2"]) else None,
                 len(sm),
+                round(sum(sm), 2) if sm else None,
                 round(mean(sm), 2) if sm else None,
                 len(lg),
+                round(sum(lg), 2) if lg else None,
                 round(mean(lg), 2) if lg else None,
             ])
         ws.freeze_panes = "A2"
