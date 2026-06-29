@@ -8,6 +8,7 @@ baut EINE .xlsx-Mappe mit:
   - Pivot_summary           : je Bild Kennzahlen (+ Faktoren animal/cond/panel) + Gesamt
   - Pivot_NKcells           : je Bild Mittelwerte (Morphologie, NKp46, Distanzen)
   - Pivot_vessels           : je Bild Summen (Detections, NK, NK-within)
+  - Pivot_struct_area       : je Bild Dichte & Fläche (Synaptophysin, small/large vessel)
   - PerAnimal_condition     : Tier x Bedingung Mittelwerte (richtiges biol. Replikat)
 
 Eingaben (TSV oder CSV; Trennzeichen wird erkannt):
@@ -92,19 +93,54 @@ def write_raw(wb, title, header, rows, maxcols=None):
 
 # ---------------------------- Build ----------------------------
 def build(measdir, out):
-    det_h, det = load(find(measdir, "ALL_detections_NKcells"))
-    non_h, non = load(find(measdir, "ALL_detections_nonNK"))
-    ves_h, ves = load(find(measdir, "ALL_vessels_annotations"))
+    det_h, det  = load(find(measdir, "ALL_detections_NKcells"))
+    non_h, non  = load(find(measdir, "ALL_detections_nonNK"))
+    ves_h, ves  = load(find(measdir, "ALL_vessels_annotations"))
     sum_h, summ = load(find(measdir, "SUMMARY_per_image"))
     print(f"  NK={len(det)}  nonNK={len(non)}  vessels={len(ves)}  summary={len(summ)}")
 
     wb = Workbook(); wb.remove(wb.active)
 
-    # ----- Pivot_summary (je Bild + Faktoren) -----
+    # ── Struktur-Metriken vorab berechnen (aus ALL_vessels_annotations) ──────
+    # Wird in Pivot_summary, PerAnimal_condition und Pivot_struct_area genutzt.
+    area_col = col_for(ves_h, "Area µm^2", "Area um^2", "Area")
+    cls_col  = next((h for h in ves_h if str(h).strip().lower() == "classification"), None)
+    img_v    = ves_h[0] if ves_h else None
+
+    # struct_img[image] -> dict mit 5 gemittelten Area-Kennzahlen je Bild
+    struct_img = {}
+    # struct_raw[image] -> Rohdaten für Pivot_struct_area (Counts + Listen)
+    struct_raw = {}
+    STRUCT_COLS = ["syn_density_per_mm2", "syn_area_mean_um2", "syn_area_fraction_pct",
+                   "small_vessel_area_mean_um2", "large_vessel_area_mean_um2"]
+    if area_col and cls_col and img_v:
+        _raw = defaultdict(lambda: {"tissue_um2": 0.0, "syn": [], "small": [], "large": []})
+        for r in ves:
+            _c = str(r.get(cls_col) or "").strip()
+            _a = r.get(area_col)
+            _i = r[img_v]
+            if not isinstance(_a, float):
+                continue
+            if   _c == "Tissue":        _raw[_i]["tissue_um2"] += _a
+            elif _c == "Synaptophysin": _raw[_i]["syn"].append(_a)
+            elif _c == "small vessel":  _raw[_i]["small"].append(_a)
+            elif _c == "large vessel":  _raw[_i]["large"].append(_a)
+        for _i, _s in _raw.items():
+            _t = _s["tissue_um2"] / 1e6 if _s["tissue_um2"] else None
+            struct_img[_i] = {
+                "syn_density_per_mm2":       round(len(_s["syn"]) / _t, 2)           if (_s["syn"] and _t)           else None,
+                "syn_area_mean_um2":          round(mean(_s["syn"]), 2)               if _s["syn"]                    else None,
+                "syn_area_fraction_pct":      round(sum(_s["syn"]) * 100.0 / _s["tissue_um2"], 4) if (_s["syn"] and _s["tissue_um2"]) else None,
+                "small_vessel_area_mean_um2": round(mean(_s["small"]), 2)             if _s["small"]                  else None,
+                "large_vessel_area_mean_um2": round(mean(_s["large"]), 2)             if _s["large"]                  else None,
+            }
+            struct_raw[_i] = _s   # für Pivot_struct_area
+
+    # ----- Pivot_summary (je Bild + Faktoren + gemittelte Area-Werte) --------
     img_c = sum_h[0]
     ws = wb.create_sheet("Pivot_summary")
     factor_cols = ["animal", "sex", "cond", "panel", "sample"]
-    head = [img_c] + factor_cols + sum_h[1:]
+    head = [img_c] + factor_cols + sum_h[1:] + (STRUCT_COLS if struct_img else [])
     ws.append(head)
     for c in ws[1]:
         c.font = HB; c.fill = GREY
@@ -114,16 +150,28 @@ def build(measdir, out):
         f = parse_factors(r[img_c])
         if f["is_control"]:
             continue
-        ws.append([r[img_c]] + [f[k] for k in factor_cols] + [r.get(h) for h in sum_h[1:]])
+        si = struct_img.get(r[img_c], {})
+        ws.append(
+            [r[img_c]] + [f[k] for k in factor_cols] +
+            [r.get(h) for h in sum_h[1:]] +
+            ([si.get(c) for c in STRUCT_COLS] if struct_img else [])
+        )
         for h in numeric_cols:
             if isinstance(r.get(h), float):
                 totals[h].append(r[h])
+        for c in STRUCT_COLS:
+            v = si.get(c)
+            if isinstance(v, float):
+                totals[c].append(v)
     grow = ["Gesamt/Mittel", "", "", "", "", ""]
     for h in numeric_cols:
         vals = totals.get(h, [])
         grow.append(round(sum(vals), 2) if ("count" in h or h.endswith("vessels") or h == "NK_count") else
                     (round(mean(vals), 3) if vals else None))
-    gr = ws.append(grow)
+    for c in STRUCT_COLS:
+        vals = totals.get(c, [])
+        grow.append(round(mean(vals), 3) if vals else None)
+    ws.append(grow)
     for c in ws[ws.max_row]:
         c.font = HB
     ws.freeze_panes = "A2"
@@ -171,8 +219,6 @@ def build(measdir, out):
         ws.freeze_panes = "A2"
 
     # ----- Pivot_zones_syn (Zonenprofil je Bild: NK-Distanz ZU SYNAPTOPHYSIN) -----
-    # Analog zu Pivot_zones, aber je NK-Zelle aus der Rohdistanz berechnet
-    # (gleiche Zonengrenzen wie im Groovy-Skript: <=5 / <=10 / <=20 / >20 µm).
     syn_src = "Dist synaptophysin um"
     if syn_src in det_h:
         img_dd = det_h[0]
@@ -291,7 +337,6 @@ def build(measdir, out):
         ws.freeze_panes = "A2"
 
     # ----- Pivot_vessels (Summen je Bild) -----
-    img_v = ves_h[0]
     vcols = [c for c in ["Num Detections", "Num NK-cell", "NK within 20um count", "NK within 5um count"] if c in ves_h]
     vagg = defaultdict(lambda: defaultdict(float)); vcnt = defaultdict(int)
     for r in ves:
@@ -309,20 +354,8 @@ def build(measdir, out):
         ws.append([im, f["animal"], f["cond"], f["panel"], vcnt[im]] + [round(vagg[im][c], 1) for c in vcols])
     ws.freeze_panes = "A2"
 
-    # ----- Pivot_struct_area (je Bild: Dichte & Flaeche der Strukturen) -----
-    # Synaptophysin-Dichte/-Flaeche sowie small/large vessel Flaeche aus den Annotationen.
-    area_col = col_for(ves_h, "Area µm^2", "Area um^2", "Area")
-    cls_col  = next((h for h in ves_h if str(h).strip().lower() == "classification"), None)
-    if area_col and cls_col:
-        st = defaultdict(lambda: {"tissue_um2": 0.0, "syn": [], "small": [], "large": []})
-        for r in ves:
-            cls = str(r.get(cls_col) or "").strip(); a = r.get(area_col); im = r[img_v]
-            if not isinstance(a, float):
-                continue
-            if   cls == "Tissue":        st[im]["tissue_um2"] += a
-            elif cls == "Synaptophysin": st[im]["syn"].append(a)
-            elif cls == "small vessel":  st[im]["small"].append(a)
-            elif cls == "large vessel":  st[im]["large"].append(a)
+    # ----- Pivot_struct_area (je Bild: Dichte & Fläche der Strukturen) -----
+    if struct_raw:
         ws = wb.create_sheet("Pivot_struct_area")
         ws.append([img_v, "animal", "cond", "panel",
                    "tissue_area_mm2",
@@ -331,11 +364,11 @@ def build(measdir, out):
                    "n_large_vessel", "large_vessel_area_mean_um2"])
         for c in ws[1]:
             c.font = HB; c.fill = GREY
-        for im in sorted(st):
+        for im in sorted(struct_raw):
             f = parse_factors(im)
             if f["is_control"]:
                 continue
-            s = st[im]; tmm2 = s["tissue_um2"] / 1e6 if s["tissue_um2"] else None
+            s = struct_raw[im]; tmm2 = s["tissue_um2"] / 1e6 if s["tissue_um2"] else None
             syn, sm, lg = s["syn"], s["small"], s["large"]
             ws.append([
                 im, f["animal"], f["cond"], f["panel"],
@@ -351,7 +384,7 @@ def build(measdir, out):
             ])
         ws.freeze_panes = "A2"
 
-    # ----- PerAnimal_condition -----
+    # ----- PerAnimal_condition (inkl. gemittelter Area-Werte) ----------------
     metrics = [c for c in ["NK_density_per_mm2",
                            "small_vessel_density_per_mm2", "large_vessel_density_per_mm2", "vessel_density_per_mm2",
                            "perivascular_pct", "vessel_area_fraction_pct",
@@ -368,8 +401,18 @@ def build(measdir, out):
         for m in metrics:
             if isinstance(r.get(m), float):
                 pa[(f["animal"], f["cond"], m)].append(r[m])
+    # Struktur-Area-Mittel je Tier x Bedingung
+    pa_struct = defaultdict(list)
+    for _im, _si in struct_img.items():
+        _f = parse_factors(_im)
+        if _f["is_control"]:
+            continue
+        for c in STRUCT_COLS:
+            v = _si.get(c)
+            if v is not None:
+                pa_struct[(_f["animal"], _f["cond"], c)].append(v)
     ws = wb.create_sheet("PerAnimal_condition")
-    ws.append(["animal", "cond"] + metrics)
+    ws.append(["animal", "cond"] + metrics + (STRUCT_COLS if struct_img else []))
     for c in ws[1]:
         c.font = HB; c.fill = GREY
     animals = sorted({parse_factors(r[img_c])["animal"] for r in summ if not parse_factors(r[img_c])["is_control"]})
@@ -378,6 +421,9 @@ def build(measdir, out):
             row = [a, cond]
             for m in metrics:
                 vals = pa.get((a, cond, m), [])
+                row.append(round(mean(vals), 2) if vals else None)
+            for c in STRUCT_COLS:
+                vals = pa_struct.get((a, cond, c), [])
                 row.append(round(mean(vals), 2) if vals else None)
             ws.append(row)
     ws.freeze_panes = "A2"
